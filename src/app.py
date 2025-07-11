@@ -1,10 +1,15 @@
 from flask import Flask, make_response, request
 from blueprints import register_blueprints
+from extensions import init_extensions
+from config import config
 import settings
 
 def create_app():
     
     app = Flask(__name__)
+
+    # 확장 초기화 (데이터베이스포함)
+    init_extensions(app)
 
     @app.before_request
     def handle_options_request():
@@ -21,7 +26,7 @@ def create_app():
     register_blueprints(app)
     return app
 
-app = create_app()
+app = create_app('development' if not settings.PRODUCTION_MODE else 'production')
 
 if __name__ == "__main__":
     print(" ### CloakBox API 서버를 시작합니다. ###")

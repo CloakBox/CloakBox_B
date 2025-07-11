@@ -1,3 +1,20 @@
+### SQL DB ###
+
+DB_TYPE = "POSTGRESQL" # "MARIADB" or "POSTGRESQL"
+DB_HOST = "..."
+DB_PORT = 5432
+DB_NAME = "..."
+DB_USER = "..."
+DB_PASS = "..."
+DB_RECONN_TIMEOUT = 5
+
+### REDIS ###
+
+RD_HOST = "..."
+RD_PORT = "6379"
+RD_PART = 0
+RD_PASS = "..."
+
 ### INTERNAL SETTINGS ###
 
 PRODUCTION_MODE=False
