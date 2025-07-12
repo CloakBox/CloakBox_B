@@ -1,5 +1,7 @@
 ### SQL DB ###
 
+### SSH 터널링 ###
+
 DB_TYPE = "POSTGRESQL" # "MARIADB" or "POSTGRESQL"
 DB_HOST = "..."
 DB_PORT = 5432
@@ -7,6 +9,17 @@ DB_NAME = "..."
 DB_USER = "..."
 DB_PASS = "..."
 DB_RECONN_TIMEOUT = 5
+
+### SSH 터널링 설정 ###
+
+SSH_TUNNEL_ENABLED = True
+SSH_HOST = "..."
+SSH_PORT = ...
+SSH_USER = "..."
+SSH_PASSWORD = "..."
+SSH_KEY_PATH = "..."
+REMOTE_DB_HOST = "..."
+REMOTE_DB_PORT = 5432
 
 ### REDIS ###
 

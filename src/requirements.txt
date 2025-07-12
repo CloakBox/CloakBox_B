@@ -6,3 +6,7 @@ flask-migrate
 marshmallow
 marshmallow-sqlalchemy
 python-dotenv
+pymysql
+bcrypt
+pydantic
+sshtunnel
