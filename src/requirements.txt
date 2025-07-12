@@ -1,2 +1,12 @@
 flask
-waitress
+gunicorn
+flask-sqlalchemy
+psycopg2-binary
+flask-migrate
+marshmallow
+marshmallow-sqlalchemy
+python-dotenv
+pymysql
+bcrypt
+pydantic
+sshtunnel
