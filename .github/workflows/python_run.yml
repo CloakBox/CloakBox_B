@@ -17,8 +17,5 @@ jobs:
         run: |
           cd /home/bin/cloakbox_api
           git pull origin main
-          source .venv/bin/activate
-          pip install -r src/requirements.txt
-          
-          # cloakbox_deploy 사용자로 systemd 서비스 재시작
+          .venv/bin/pip install -r src/requirements.txt
           sudo -u cloakbox_deploy systemctl restart cloakbox
