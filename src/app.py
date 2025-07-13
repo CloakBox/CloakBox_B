@@ -54,10 +54,11 @@ def create_app() -> Flask:
     register_blueprints(app)
     return app
 
+app = create_app()
+
 if __name__ == '__main__':
     print(" ### CloakBox API 서버를 시작합니다. ###")
     print(" ### 서버 주소: http://0.0.0.0:" + str(settings.DEV_PORT) + " ###")
     print(" ### 개발 모드로 실행 중. ###")
     
-    app = create_app()
     app.run(debug=settings.DEBUG_MODE > 0, port=settings.DEV_PORT)
