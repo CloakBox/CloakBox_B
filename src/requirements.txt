@@ -10,3 +10,5 @@ pymysql
 bcrypt
 pydantic
 sshtunnel
+flask-restx
+PyJWT

@@ -1,3 +1,9 @@
+### JWT 설정 ###
+
+JWT_SECRET_KEY = "..."
+JWT_ACCESS_TOKEN_EXPIRE_MINUTS = 30
+JWT_REFRESH_TOKEN_EXPIRE_DAYS = 1
+
 ### SQL DB ###
 
 ### SSH 터널링 ###

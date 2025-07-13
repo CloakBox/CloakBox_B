@@ -1,4 +1,5 @@
 from flask import Flask, make_response, request
+from werkzeug.exceptions import NotFound, MethodNotAllowed
 from blueprints import register_blueprints
 from extensions import init_extensions, tunnel_manager
 import config
@@ -59,6 +60,7 @@ app = create_app()
 if __name__ == '__main__':
     print(" ### CloakBox API 서버를 시작합니다. ###")
     print(" ### 서버 주소: http://0.0.0.0:" + str(settings.DEV_PORT) + " ###")
+    print(" ### Swagger 문서: http://0.0.0.0:" + str(settings.DEV_PORT) + "/api/docs ###")
     print(" ### 개발 모드로 실행 중. ###")
     
     app.run(debug=settings.DEBUG_MODE > 0, port=settings.DEV_PORT)
