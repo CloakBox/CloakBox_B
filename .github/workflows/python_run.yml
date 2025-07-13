@@ -15,7 +15,7 @@ jobs:
 
       - name: Deploy App Locally
         run: |
-          cd /home/bin/clockbox
+          cd /home/bin/cloakbox_api
           git pull origin main
           source .venv/bin/activate
           pip install -r src/requirements.txt
