@@ -19,6 +19,16 @@ jobs:
           git pull origin main
           source .venv/bin/activate
           pip install -r src/requirements.txt
-          pkill gunicorn || true
-          cd src
-          nohup gunicorn -w 4 -b 0.0.0.0:8000 app:create_app > ../gunicorn.log 2>&1 &
+          
+          # systemd 서비스 재시작 (sudo 사용)
+          sudo systemctl restart cloakbox
+          
+          # 서비스 상태 확인
+          sleep 3
+          if sudo systemctl is-active --quiet cloakbox; then
+            echo "CloakBox 서비스가 성공적으로 시작되었습니다."
+          else
+            echo "CloakBox 서비스 시작에 실패했습니다."
+            sudo systemctl status cloakbox
+            exit 1
+          fi
