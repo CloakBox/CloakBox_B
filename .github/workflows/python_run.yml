@@ -6,23 +6,18 @@ on:
 
 jobs:
   deploy:
-    name: Deploy via SSH
-    runs-on: [self-hosted, cloakbox]
+    name: Deploy on Self-Hosted Runner
+    runs-on: self-hosted
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Deploy
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd /home/bin/clockbox
-            git pull origin main
-            source .venv/bin/activate
-            pip install -r CloakBox_B/src/requirements.txt
-            gunicorn -w 4 -b 0.0.0.0:8000 app:create_app
+      - name: Deploy App Locally
+        run: |
+          cd /home/bin/clockbox
+          git pull origin main
+          source .venv/bin/activate
+          pip install -r CloakBox_B/src/requirements.txt
+          pkill gunicorn || true
+          nohup gunicorn -w 4 -b 0.0.0.0:8000 app:create_app > gunicorn.log 2>&1 &
