@@ -18,6 +18,7 @@ jobs:
           cd /home/bin/clockbox
           git pull origin main
           source .venv/bin/activate
-          pip install -r CloakBox_B/src/requirements.txt
+          pip install -r src/requirements.txt
           pkill gunicorn || true
-          nohup gunicorn -w 4 -b 0.0.0.0:8000 app:create_app > gunicorn.log 2>&1 &
+          cd src
+          nohup gunicorn -w 4 -b 0.0.0.0:8000 app:create_app > ../gunicorn.log 2>&1 &
