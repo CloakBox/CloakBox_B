@@ -20,15 +20,20 @@ jobs:
           source .venv/bin/activate
           pip install -r src/requirements.txt
           
-          # systemd 서비스 재시작 (sudo 사용)
-          sudo systemctl restart cloakbox
+          # cloakbox_deploy 사용자로 systemd 서비스 재시작
+          sudo -u cloakbox_deploy systemctl restart cloakbox
           
           # 서비스 상태 확인
-          sleep 3
-          if sudo systemctl is-active --quiet cloakbox; then
+          sleep 5
+          if sudo -u cloakbox_deploy systemctl is-active cloakbox > /dev/null 2>&1; then
             echo "CloakBox 서비스가 성공적으로 시작되었습니다."
+            echo "서비스 상태:"
+            sudo -u cloakbox_deploy systemctl status cloakbox --no-pager
           else
             echo "CloakBox 서비스 시작에 실패했습니다."
-            sudo systemctl status cloakbox
+            echo "서비스 상태:"
+            sudo -u cloakbox_deploy systemctl status cloakbox --no-pager
+            echo "로그 확인:"
+            sudo journalctl -u cloakbox --no-pager -n 20
             exit 1
           fi
