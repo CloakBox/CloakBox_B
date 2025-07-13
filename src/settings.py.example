@@ -11,7 +11,8 @@ DB_PASS = "..."
 DB_RECONN_TIMEOUT = 5
 
 ### SSH 터널링 설정 ###
-
+# 로컬 개발 환경에서만 True 설정
+# CI/CD 환경이나 서버에서는 False로 설정
 SSH_TUNNEL_ENABLED = True
 SSH_HOST = "..."
 SSH_PORT = ...

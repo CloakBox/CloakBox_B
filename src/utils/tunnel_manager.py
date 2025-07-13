@@ -87,6 +87,10 @@ class TunnelManager:
     
     def get_or_create_tunnel(self, tunnel_key: str = "default") -> Optional[SSHTunnel]:
         """터널을 가져오거나 생성"""
+        if not hasattr(settings, 'SSH_TUNNEL_ENABLED') or not settings.SSH_TUNNEL_ENABLED:
+            self.logger.warning("SSH 터널링이 비활성화되어 있습니다.")
+            return None
+        
         with self.lock:
             if tunnel_key not in self.tunnels:
                 try:

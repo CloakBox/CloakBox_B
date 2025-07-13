@@ -6,6 +6,34 @@ from typing import Optional
 class Config:
     """기본 설정 클래스"""
     
+    @staticmethod
+    def is_ci_environment():
+        """CI 환경 여부 확인"""
+        return any([
+            os.getenv('CI'),
+            os.getenv('GITHUB_ACTIONS'),
+            os.getenv('GITLAB_CI'),
+            os.getenv('TRAVIS'),
+            os.getenv('CIRCLECI')
+        ])
+
+    @staticmethod
+    def should_use_tunnel():
+        """SSH 터널링 사용 여부 확인"""
+        if Config.is_ci_environment():
+            return False
+        
+        # 명시적으로 비활성화된 경우
+        if hasattr(settings, 'SSH_TUNNEL_ENABLED') and not settings.SSH_TUNNEL_ENABLED:
+            return False
+        
+        # 운영 환경에서는 터널링 비활성화 (서버에서 직접 실행)
+        if hasattr(settings, 'PRODUCTION_MODE') and settings.PRODUCTION_MODE:
+            return False
+        
+        # 기본적으로 터널링 사용
+        return True
+
     # 데이터베이스 연결 문자열 생성
     @staticmethod
     def get_database_url():

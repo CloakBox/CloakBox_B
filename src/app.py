@@ -8,12 +8,12 @@ def create_app() -> Flask:
     
     app = Flask(__name__)
     
-    # SSH 터널링이 활성화된 경우 자동으로 설정
-    if hasattr(settings, 'SSH_TUNNEL_ENABLED') and settings.SSH_TUNNEL_ENABLED:
+    should_use_tunnel = config.Config.should_use_tunnel()
+
+    if should_use_tunnel:
         try:
             # 기본 터널 생성
             tunnel = tunnel_manager.get_or_create_tunnel("default")
-            
             if tunnel:
                 # 터널링을 통해 데이터베이스 설정 업데이트
                 config.update_database_config_with_tunnel(tunnel.local_port)
@@ -35,6 +35,7 @@ def create_app() -> Flask:
             init_extensions(app)
     else:
         # 기본 설정 사용 (SSH 터널링 비활성화 시)
+        print("SSH 터널링 비활성화 시 기본 설정 사용")
         app.config.from_object(config.config['default'])
         init_extensions(app)
     
