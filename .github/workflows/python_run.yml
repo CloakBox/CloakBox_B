@@ -7,7 +7,7 @@ on:
 jobs:
   deploy:
     name: Deploy via SSH
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, cloakbox]
 
     steps:
       - name: Checkout Code
