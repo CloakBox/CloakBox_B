@@ -47,23 +47,48 @@ class SendCertificationCode(Resource):
                 }, 400
             
             # 만료된 인증번호 정리
-            cleanup_expired_codes()
+            try:
+                cleanup_expired_codes()
+            except Exception as e:
+                print(f"만료된 인증번호 정리 중 오류: {str(e)}")
             
             # 인증번호 생성 및 저장
-            certification_code = create_certification_code(
-                certification_data.email
-            )
+            try:
+                certification_code = create_certification_code(
+                    certification_data.email
+                )
+            except Exception as e:
+                print(f"인증번호 생성 중 오류: {str(e)}")
+                return {
+                    "status": "error",
+                    "message": "인증번호 생성에 실패했습니다.",
+                    "error": str(e)
+                }, 500
             
             # 이메일 전송
-            if not send_certification_email(certification_data.email, certification_code.code):
-                # 이메일 전송 실패 시 생성된 인증번호 삭제
-                db.session.delete(certification_code)
-                db.session.commit()
+            try:
+                if not send_certification_email(certification_data.email, certification_code.code):
+                    db.session.delete(certification_code)
+                    db.session.commit()
+                    
+                    return {
+                        "status": "error",
+                        "message": "이메일 전송에 실패했습니다.",
+                        "error": "Failed to send email"
+                    }, 500
+
+            except Exception as e:
+                print(f"이메일 전송 중 오류: {str(e)}")
+                try:
+                    db.session.delete(certification_code)
+                    db.session.commit()
+                except:
+                    pass
                 
                 return {
                     "status": "error",
-                    "message": "이메일 전송에 실패했습니다.",
-                    "error": "Failed to send email"
+                    "message": "이메일 전송 중 오류가 발생했습니다.",
+                    "error": str(e)
                 }, 500
             
             return {
@@ -72,11 +97,14 @@ class SendCertificationCode(Resource):
                 "data": {
                     "email": certification_code.recipient,
                     "user_uuid": str(certification_code.user_uuid) if certification_code.user_uuid else None,
-                    "expires_at": certification_code.expires_at
+                    "expires_at": certification_code.expires_at.isoformat() if certification_code.expires_at else None
                 }
             }, 200
             
         except Exception as e:
+            print(f"인증번호 전송 중 예상치 못한 오류: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {
                 "status": "error",
                 "message": f"인증번호 전송 중 오류가 발생했습니다: {str(e)}",
