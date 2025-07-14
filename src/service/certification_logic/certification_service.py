@@ -14,28 +14,34 @@ def generate_certification_code(length: int = 6) -> str:
 
 def create_certification_code(email: str, user_uuid: Optional[str] = None) -> UserCertification:
     """ 인증번호 생성 및 저장 """
-    existing_codes = UserCertification.query.filter_by(
-        recipient=email.lower(),
-        use_yn=False
-    ).all()
+    try:
+        # 데이터베이스 연결 확인
+        existing_codes = UserCertification.query.filter_by(
+            recipient=email.lower(),
+            use_yn=False
+        ).all()
 
-    for code in existing_codes:
-        db.session.delete(code)
-    
-    # 새로운 인증번호 생성
-    code_length = getattr(settings, 'CERTIFICATION_CODE_LENGTH', 6)
-    certification_code = generate_certification_code(code_length)
+        for code in existing_codes:
+            db.session.delete(code)
+        
+        # 새로운 인증번호 생성
+        code_length = getattr(settings, 'CERTIFICATION_CODE_LENGTH', 6)
+        certification_code = generate_certification_code(code_length)
 
-    # 인증번호 저장
-    new_certification = UserCertification(
-        recipient=email.lower(),
-        code=certification_code,
-        user_uuid=user_uuid
-    )
-    db.session.add(new_certification)
-    db.session.commit()
+        # 인증번호 저장
+        new_certification = UserCertification(
+            recipient=email.lower(),
+            code=certification_code,
+            user_uuid=user_uuid
+        )
+        db.session.add(new_certification)
+        db.session.commit()
 
-    return new_certification
+        return new_certification
+    except Exception as e:
+        print(f"인증번호 생성 중 데이터베이스 오류: {str(e)}")
+        db.session.rollback()
+        raise e
 
 def send_certification_email(email: str, code: str) -> bool:
     """ 인증번호 이메일 전송 """
