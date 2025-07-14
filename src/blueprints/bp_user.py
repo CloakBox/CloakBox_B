@@ -24,9 +24,9 @@ user_bp = Blueprint("user", __name__, url_prefix=f'/{settings.API_PREFIX}')
 @user_ns.route('/register')
 class UserRegister(Resource):
     @user_ns.expect(user_register_model)
-    @user_ns.response(201, 'Success', user_response_model)
-    @user_ns.response(400, 'Bad Request', error_response_model)
-    @user_ns.response(500, 'Internal Server Error', error_response_model)
+    @user_ns.response(201, 'Success')
+    @user_ns.response(400, 'Bad Request')
+    @user_ns.response(500, 'Internal Server Error')
     def post(self):
         """사용자 회원가입"""
         try:
@@ -76,7 +76,7 @@ class UserRegister(Resource):
                     "email": new_user.email,
                     "created_at": new_user.created_at.isoformat()
                 }
-            }, 201
+            }, 200
             
         except Exception as e:
             db.session.rollback()
@@ -88,10 +88,10 @@ class UserRegister(Resource):
 @user_ns.route('/login')
 class UserLogin(Resource):
     @user_ns.expect(user_login_model)
-    @user_ns.response(200, 'Success', user_login_response_model)
-    @user_ns.response(400, 'Bad Request', user_login_error_response_model)
-    @user_ns.response(404, 'User Not Found', user_login_error_response_model)
-    @user_ns.response(500, 'Internal Server Error', user_login_error_response_model)
+    @user_ns.response(200, 'Success')
+    @user_ns.response(400, 'Bad Request')
+    @user_ns.response(404, 'User Not Found')
+    @user_ns.response(500, 'Internal Server Error')
     def post(self):
         """사용자 로그인"""
         try:
@@ -147,8 +147,8 @@ class UserLogin(Resource):
 @user_ns.route('/logout')
 class UserLogout(Resource):
     @user_ns.doc(security='Bearer')
-    @user_ns.response(200, 'Success', user_logout_response_model)
-    @user_ns.response(401, 'Unauthorized', token_auth_error_model)
+    @user_ns.response(200, 'Success')
+    @user_ns.response(500, 'Internal Server Error')
     def post(self):
         """사용자 로그아웃"""
         try:
