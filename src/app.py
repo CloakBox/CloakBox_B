@@ -4,6 +4,7 @@ from blueprints import register_blueprints
 from extensions import init_extensions, tunnel_manager
 import config
 import settings
+from swagger_config import api
 
 def create_app() -> Flask:
     
@@ -52,6 +53,7 @@ def create_app() -> Flask:
         response.headers["Access-Control-Allow-Headers"] = "*"
         return response
     
+    api.init_app(app)
     register_blueprints(app)
     return app
 

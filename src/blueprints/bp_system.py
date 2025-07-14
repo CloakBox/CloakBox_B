@@ -14,7 +14,7 @@ system_bp = Blueprint("system", __name__, url_prefix=f'/{settings.API_PREFIX}')
 
 @system_ns.route('/version')
 class SystemVersion(Resource):
-    @system_ns.response(200, 'Success', system_version_model)
+    @system_ns.response(200, 'Success')
     def get(self):
         """시스템 버전 정보 조회"""
         try:
@@ -30,7 +30,7 @@ class SystemVersion(Resource):
 
 @system_ns.route('/health')
 class SystemHealth(Resource):
-    @system_ns.response(200, 'Success', system_health_model)
+    @system_ns.response(200, 'Success')
     def get(self):
         """시스템 상태 확인"""
         try:

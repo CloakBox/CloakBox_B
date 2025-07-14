@@ -1,6 +1,3 @@
-# 표준 라이브러리 임포트
-import logging
-
 # 서드파티 라이브러리 임포트
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
