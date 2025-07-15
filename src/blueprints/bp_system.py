@@ -9,6 +9,7 @@ from models.system_model.system_schemas import (
     success_response_model,
     error_response_model
 )
+from extensions import app_logger
 
 system_bp = Blueprint("system", __name__, url_prefix=f'/{settings.API_PREFIX}')
 
@@ -23,6 +24,7 @@ class SystemVersion(Resource):
                 "version_date": constants.API_VERSION_DATE
             }
         except Exception as e:
+            app_logger.error(f"버전 정보 조회 중 오류가 발생했습니다: {str(e)}")
             return {
                 "status": "error",
                 "message": f"버전 정보 조회 중 오류가 발생했습니다: {str(e)}"
@@ -39,6 +41,7 @@ class SystemHealth(Resource):
                 "message": "시스템이 정상적으로 작동 중입니다."
             }
         except Exception as e:
+            app_logger.error(f"시스템 상태 확인 중 오류가 발생했습니다: {str(e)}")
             return {
                 "status": "error",
                 "message": f"시스템 상태 확인 중 오류가 발생했습니다: {str(e)}"

@@ -38,11 +38,19 @@ class Config:
     @staticmethod
     def get_database_url():
         if settings.DB_TYPE == "POSTGRESQL":
+            # 더 안전한 URL 인코딩 처리
+            from urllib.parse import quote_plus
+            user = quote_plus(settings.DB_USER)
             password = quote_plus(settings.DB_PASS)
-            return f"postgresql://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+            host = quote_plus(settings.DB_HOST)
+            name = quote_plus(settings.DB_NAME)
+            return f"postgresql://{user}:{password}@{host}:{settings.DB_PORT}/{name}"
         elif settings.DB_TYPE == "MARIADB":
+            user = quote_plus(settings.DB_USER)
             password = quote_plus(settings.DB_PASS)
-            return f"mysql+pymysql://{settings.DB_USER}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+            host = quote_plus(settings.DB_HOST)
+            name = quote_plus(settings.DB_NAME)
+            return f"mysql+pymysql://{user}:{password}@{host}:{settings.DB_PORT}/{name}"
         else:
             raise ValueError(f"지원하지 않는 데이터베이스 유형: {settings.DB_TYPE}")
     
