@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_restx import Resource
-from extensions import db
+from extensions import db, app_logger, jwt_manager
+from models.user_model.user import User
 import settings
 from swagger_config import certification_ns
 from pydantic import ValidationError
@@ -8,8 +9,8 @@ from models.certification_model.certification_dto import SendCertificationCodeDT
 from models.certification_model.certification_schemas import (
     send_certification_code_model,
     verify_certification_code_model,
-    send_certification_response_model,
-    certification_error_response_model
+    send_certification_success_model,
+    verify_certification_success_model,
 )
 from service.certification_logic.certification_service import (
     create_certification_code,
@@ -17,17 +18,36 @@ from service.certification_logic.certification_service import (
     verify_certification_code,
     cleanup_expired_codes
 )
+import logging
 
 certification_bp = Blueprint("certification", __name__, url_prefix=f'/{settings.API_PREFIX}')
+
+def get_safe_logger():
+    """안전한 로거 반환"""
+    if app_logger is not None:
+        return app_logger
+    else:
+        # 기본 로거 반환
+        logger = logging.getLogger('cloakbox_app')
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
 
 @certification_ns.route('/send-certification-code')
 class SendCertificationCode(Resource):
     @certification_ns.expect(send_certification_code_model)
-    @certification_ns.response(200, 'Success')
+    @certification_ns.response(200, 'Success', send_certification_success_model)
     @certification_ns.response(400, 'Bad Request')
+    @certification_ns.response(429, 'Too Many Requests')
     @certification_ns.response(500, 'Internal Server Error')
     def post(self):
         """인증번호 전송"""
+        logger = get_safe_logger()
+        
         try:
             if not request.json:
                 return {
@@ -50,7 +70,7 @@ class SendCertificationCode(Resource):
             try:
                 cleanup_expired_codes()
             except Exception as e:
-                print(f"만료된 인증번호 정리 중 오류: {str(e)}")
+                logger.warning(f"만료된 인증번호 정리 중 오류: {str(e)}")
             
             # 인증번호 생성 및 저장
             try:
@@ -58,12 +78,20 @@ class SendCertificationCode(Resource):
                     certification_data.email
                 )
             except Exception as e:
-                print(f"인증번호 생성 중 오류: {str(e)}")
-                return {
-                    "status": "error",
-                    "message": "인증번호 생성에 실패했습니다.",
-                    "error": str(e)
-                }, 500
+                logger.error(f"인증번호 생성 중 오류: {str(e)}")
+                error_message = str(e)
+                if "1분 이내에 재생성할 수 없습니다" in error_message:
+                    return {
+                        "status": "error",
+                        "message": "1분 이내에 재생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
+                        "error": "Too frequent requests"
+                    }, 429  # Too Many Requests
+                else:
+                    return {
+                        "status": "error",
+                        "message": "인증번호 생성에 실패했습니다.",
+                        "error": str(e)
+                    }, 500
             
             # 이메일 전송
             try:
@@ -78,7 +106,7 @@ class SendCertificationCode(Resource):
                     }, 500
 
             except Exception as e:
-                print(f"이메일 전송 중 오류: {str(e)}")
+                logger.error(f"이메일 전송 중 오류: {str(e)}")
                 try:
                     db.session.delete(certification_code)
                     db.session.commit()
@@ -95,16 +123,13 @@ class SendCertificationCode(Resource):
                 "status": "success",
                 "message": "인증번호가 전송되었습니다.",
                 "data": {
-                    "email": certification_code.recipient,
-                    "user_uuid": str(certification_code.user_uuid) if certification_code.user_uuid else None,
                     "expires_at": certification_code.expires_at.isoformat() if certification_code.expires_at else None
                 }
             }, 200
-            
         except Exception as e:
-            print(f"인증번호 전송 중 예상치 못한 오류: {str(e)}")
+            logger.error(f"인증번호 전송 중 예상치 못한 오류: {str(e)}")
             import traceback
-            traceback.print_exc()
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "status": "error",
                 "message": f"인증번호 전송 중 오류가 발생했습니다: {str(e)}",
@@ -114,12 +139,14 @@ class SendCertificationCode(Resource):
 @certification_ns.route('/verify-certification-code')
 class VerifyCertificationCode(Resource):
     @certification_ns.expect(verify_certification_code_model)
-    @certification_ns.response(200, 'Success')
+    @certification_ns.response(200, 'Success', verify_certification_success_model)
     @certification_ns.response(400, 'Bad Request')
     @certification_ns.response(409, 'Code Not Found')
     @certification_ns.response(500, 'Internal Server Error')
     def post(self):
         """인증번호 검증"""
+        logger = get_safe_logger()
+        
         try:
             if not request.json:
                 return {
@@ -154,17 +181,22 @@ class VerifyCertificationCode(Resource):
                     "error": "Invalid or expired certification code"
                 }, 409
             
+            # 사용자 조회
+            user = User.query.filter_by(
+                email=verification_data.email
+            ).first()
+                
             return {
                 "status": "success",
                 "message": "인증번호가 확인되었습니다.",
                 "data": {
-                    "email": certification_code.recipient,
-                    "user_uuid": str(certification_code.user_uuid) if certification_code.user_uuid else None,
-                    "verified": True
+                    "verified": True,
+                    "user_exists": True if user is not None else False
                 }
             }, 200
             
         except Exception as e:
+            logger.error(f"인증번호 확인 중 오류가 발생했습니다: {str(e)}")
             return {
                 "status": "error",
                 "message": f"인증번호 확인 중 오류가 발생했습니다: {str(e)}",

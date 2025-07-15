@@ -1,6 +1,5 @@
 import os
 import smtplib
-from .loging_manager import get_app_logger
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
@@ -13,7 +12,30 @@ class EmailManager:
         self.smtp_server = getattr(settings, 'EMAIL_SMTP_SERVER', '')
         self.smtp_port = getattr(settings, 'EMAIL_SMTP_PORT', 0)
         self.use_ssl = getattr(settings, 'EMAIL_USE_SSL', True)
-        self.logger = get_app_logger()
+        self._logger = None  # lazy loading
+    
+    @property
+    def logger(self):
+        """로거 lazy loading"""
+        if self._logger is None:
+            try:
+                from extensions import app_logger
+                self._logger = app_logger
+            except ImportError:
+                # extensions가 아직 초기화되지 않은 경우 기본 로거 사용
+                import logging
+                logger = logging.getLogger('email_manager')
+                if not logger.handlers:
+                    handler = logging.StreamHandler()
+                    formatter = logging.Formatter(
+                        '[%(asctime)s] %(levelname)s: %(module)s - %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S'
+                    )
+                    handler.setFormatter(formatter)
+                    logger.addHandler(handler)
+                    logger.setLevel(logging.INFO)
+                self._logger = logger
+        return self._logger
     
     def send_email(self, to_email: str, subject: str, body: str,
                     body_type: str = 'plain',

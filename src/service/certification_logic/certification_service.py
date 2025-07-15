@@ -1,7 +1,7 @@
 import random
 import string
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import desc
 from models.certification_model.certification import UserCertification
 from utils.email_manager import EmailManager
@@ -15,14 +15,18 @@ def generate_certification_code(length: int = 6) -> str:
 def create_certification_code(email: str, user_uuid: Optional[str] = None) -> UserCertification:
     """ 인증번호 생성 및 저장 """
     try:
-        # 데이터베이스 연결 확인
+        # 재생성 제한 확인
+        if not can_create_new_code(email):
+            raise Exception("1분 이내에 재생성할 수 없습니다.")
+        
+        # 기존 미사용 코드들을 사용 처리
         existing_codes = UserCertification.query.filter_by(
             recipient=email.lower(),
             use_yn=False
         ).all()
 
         for code in existing_codes:
-            db.session.delete(code)
+            code.mark_as_used()
         
         # 새로운 인증번호 생성
         code_length = getattr(settings, 'CERTIFICATION_CODE_LENGTH', 6)
@@ -79,8 +83,7 @@ def verify_certification_code(email: str, code: str) -> Optional[UserCertificati
     if not certification_code or not certification_code.is_valid():
         return None
     
-    # 인증 성공 시 삭제
-    db.session.delete(certification_code)
+    certification_code.mark_as_used()
     db.session.commit()
     
     return certification_code
@@ -96,3 +99,15 @@ def cleanup_expired_codes():
         db.session.delete(code)
     
     db.session.commit()
+
+def can_create_new_code(email: str) -> bool:
+    """ 새로운 인증번호 생성 가능 여부 확인 """
+    one_minute_ago = datetime.now(timezone.utc) - timedelta(minutes=1)
+    
+    recent_code = UserCertification.query.filter(
+        UserCertification.recipient == email.lower(),
+        UserCertification.use_yn == False,
+        UserCertification.created_at >= one_minute_ago
+    ).first()
+    
+    return recent_code is None
