@@ -35,5 +35,8 @@ verify_certification_success_model = api.model('VerifyCertificationSuccess', {
     'data': fields.Nested(api.model('VerifyCertificationData', {
         'verified': fields.Boolean(description='인증 성공 여부'),
         'user_exists': fields.Boolean(description='기존 사용자 여부'),
+        'access_token': fields.String(description='액세스 토큰'),
+        'refresh_token': fields.String(description='리프레시 토큰'),
+        'token_type': fields.String(description='토큰 타입'),
     })),
 })

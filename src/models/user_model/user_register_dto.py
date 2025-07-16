@@ -1,9 +1,11 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Any
+from typing import Any, Optional
 import re
 
 class UserRegisterDTO(BaseModel):
+
     name: str = Field(..., min_length=1, max_length=255, description="사용자 이름")
+    nickname: Optional[str] = Field(..., min_length=1, max_length=255, description="사용자 닉네임")
     email: str = Field(..., description="사용자 이메일")
     password: str = Field(..., min_length=1, description="비밀번호")
     confirm_password: str = Field(..., min_length=1, description="비밀번호 확인")
@@ -11,13 +13,13 @@ class UserRegisterDTO(BaseModel):
     class Config:
         strict = True
     
-    # @field_validator('email')
-    # @classmethod
-    # def validate_email(cls, value: str) -> str:
-    #     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    #     if not re.match(email_pattern, value):
-    #         raise ValueError('올바른 이메일 형식이 아닙니다.')
-    #     return value.lower()
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, value):
+            raise ValueError('올바른 이메일 형식이 아닙니다.')
+        return value.lower()
     
     # @field_validator('password')
     # @classmethod
@@ -40,10 +42,10 @@ class UserRegisterDTO(BaseModel):
         
     #     return value
     
-    # @field_validator('confirm_password')
-    # @classmethod
-    # def passwords_match(cls, value: str, info: Any) -> str:
-    #     data = info.data
-    #     if 'password' in data and value != data['password']:
-    #         raise ValueError('비밀번호가 일치하지 않습니다.')
-    #     return value
+    @field_validator('confirm_password')
+    @classmethod
+    def passwords_match(cls, value: str, info: Any) -> str:
+        data = info.data
+        if 'password' in data and value != data['password']:
+            raise ValueError('비밀번호가 일치하지 않습니다.')
+        return value

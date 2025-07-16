@@ -1,5 +1,7 @@
 import bcrypt
 from typing import Optional
+from models.user_model.user import User
+from extensions import jwt_manager, app_logger
 
 def hash_password(password: str) -> str:
     """
@@ -19,7 +21,7 @@ def check_password_hash(password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception as e:
-        print(f"비밀번호 검증 중 오류: {e}")
+        app_logger.error(f"비밀번호 검증 중 오류: {e}")
         return False
 
 def validate_password_strength(password: str) -> tuple[bool, str]:
@@ -44,3 +46,23 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
         return False, "비밀번호는 최소 하나의 특수문자를 포함해야 합니다."
     
     return True, "비밀번호가 유효합니다."
+
+def create_user_token(user: User) -> dict[str, str]:
+    """
+    사용자 토큰을 생성합니다.
+    """
+    try:
+        payload = {
+            'user_nickname': user.nickname,
+            'user_email': user.email
+        }
+        access_token = jwt_manager.create_access_token(payload)
+        refresh_token = jwt_manager.create_refresh_token(payload)
+
+        return {
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        }
+
+    except Exception as e:
+        raise Exception(f"사용자 토큰 생성 중 오류가 발생했습니다: {e}")

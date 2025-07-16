@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import desc
 from models.certification_model.certification import UserCertification
 from utils.email_manager import EmailManager
-from extensions import db
+from extensions import db, app_logger
 import settings
 
 def generate_certification_code(length: int = 6) -> str:
@@ -43,7 +43,7 @@ def create_certification_code(email: str, user_uuid: Optional[str] = None) -> Us
 
         return new_certification
     except Exception as e:
-        print(f"인증번호 생성 중 데이터베이스 오류: {str(e)}")
+        app_logger.error(f"인증번호 생성 중 데이터베이스 오류: {str(e)}")
         db.session.rollback()
         raise e
 
@@ -69,7 +69,7 @@ CloakBox 팀
         email_manager.send_email(email, subject, body)
         return True
     except Exception as e:
-        print(f"이메일 전송 실패: {str(e)}")
+        app_logger.error(f"이메일 전송 실패: {str(e)}")
         return False
 
 def verify_certification_code(email: str, code: str) -> Optional[UserCertification]:

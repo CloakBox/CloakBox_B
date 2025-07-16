@@ -5,7 +5,9 @@ from swagger_config import api
 user_register_model = api.model('UserRegister', {
     'name': fields.String(required=True, description='사용자 이름', example='홍길동'),
     'email': fields.String(required=True, description='사용자 이메일', example='a@test.com'),
+    'nickname': fields.String(required=False, description='사용자 닉네임', example='홍길동'),
     'password': fields.String(required=True, description='사용자 비밀번호', example='password'),
+    'confirm_password': fields.String(required=True, description='사용자 비밀번호 확인', example='password')
 })
 
 # 사용자 로그인 요청 모델
@@ -34,9 +36,6 @@ user_login_response_model = api.model('UserLoginResponse', {
     'status': fields.String(required=True, description='응답 상태', example='success'),
     'message': fields.String(required=True, description='응답 메시지', example='로그인 성공'),
     'data': fields.Nested(api.model('UserLoginData', {
-        'id': fields.String(required=True, description='사용자 ID', example='1'),
-        'name': fields.String(required=True, description='사용자 이름', example='홍길동'),
-        'email': fields.String(required=True, description='사용자 이메일', example='a@test.com'),
         'access_token': fields.String(description='액세스 토큰', example='eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...'),
         'refresh_token': fields.String(description='리프레시 토큰', example='eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...'),
         'token_type': fields.String(description='토큰 타입', example='Bearer')
