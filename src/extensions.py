@@ -15,12 +15,10 @@ from utils.auth_decorator import require_auth, require_permission, require_admin
 db = SQLAlchemy()
 migrate = Migrate()
 
-# 로거들
 app_logger = None
 api_logger = None
 error_logger = None
 database_logger = None
-
 transaction_manager = None
 email_manager = None
 

@@ -1,6 +1,5 @@
 from flask import Flask, make_response, request
 from werkzeug.exceptions import NotFound, MethodNotAllowed
-from blueprints import register_blueprints
 from extensions import init_extensions, tunnel_manager
 import config
 import settings
@@ -54,6 +53,8 @@ def create_app() -> Flask:
         return response
     
     api.init_app(app)
+    
+    from blueprints import register_blueprints
     register_blueprints(app)
     return app
 

@@ -1,7 +1,11 @@
 from flask import Blueprint, request, jsonify
 from flask_restx import Resource
-from extensions import db, app_logger, jwt_manager
+from extensions import db, app_logger
 from models.user_model.user import User
+from models.user_model.user_ip import UserIp
+from models.user_model.user_agent import UserAgent
+from models.user_model.user_login_log import UserLoginLog
+from typing import Dict, Any
 import settings
 from swagger_config import certification_ns
 from pydantic import ValidationError
@@ -18,24 +22,11 @@ from service.certification_logic.certification_service import (
     verify_certification_code,
     cleanup_expired_codes
 )
-import logging
+from service.user_logic.user_service import create_user_token
+from datetime import datetime, timezone
+import time
 
 certification_bp = Blueprint("certification", __name__, url_prefix=f'/{settings.API_PREFIX}')
-
-def get_safe_logger():
-    """안전한 로거 반환"""
-    if app_logger is not None:
-        return app_logger
-    else:
-        # 기본 로거 반환
-        logger = logging.getLogger('cloakbox_app')
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
-        return logger
 
 @certification_ns.route('/send-certification-code')
 class SendCertificationCode(Resource):
@@ -46,8 +37,6 @@ class SendCertificationCode(Resource):
     @certification_ns.response(500, 'Internal Server Error')
     def post(self):
         """인증번호 전송"""
-        logger = get_safe_logger()
-        
         try:
             if not request.json:
                 return {
@@ -70,7 +59,7 @@ class SendCertificationCode(Resource):
             try:
                 cleanup_expired_codes()
             except Exception as e:
-                logger.warning(f"만료된 인증번호 정리 중 오류: {str(e)}")
+                app_logger.warning(f"만료된 인증번호 정리 중 오류: {str(e)}")
             
             # 인증번호 생성 및 저장
             try:
@@ -78,7 +67,7 @@ class SendCertificationCode(Resource):
                     certification_data.email
                 )
             except Exception as e:
-                logger.error(f"인증번호 생성 중 오류: {str(e)}")
+                app_logger.error(f"인증번호 생성 중 오류: {str(e)}")
                 error_message = str(e)
                 if "1분 이내에 재생성할 수 없습니다" in error_message:
                     return {
@@ -106,7 +95,7 @@ class SendCertificationCode(Resource):
                     }, 500
 
             except Exception as e:
-                logger.error(f"이메일 전송 중 오류: {str(e)}")
+                app_logger.error(f"이메일 전송 중 오류: {str(e)}")
                 try:
                     db.session.delete(certification_code)
                     db.session.commit()
@@ -126,10 +115,11 @@ class SendCertificationCode(Resource):
                     "expires_at": certification_code.expires_at.isoformat() if certification_code.expires_at else None
                 }
             }, 200
+
         except Exception as e:
-            logger.error(f"인증번호 전송 중 예상치 못한 오류: {str(e)}")
+            app_logger.error(f"인증번호 전송 중 예상치 못한 오류: {str(e)}")
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            app_logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "status": "error",
                 "message": f"인증번호 전송 중 오류가 발생했습니다: {str(e)}",
@@ -145,9 +135,21 @@ class VerifyCertificationCode(Resource):
     @certification_ns.response(500, 'Internal Server Error')
     def post(self):
         """인증번호 검증"""
-        logger = get_safe_logger()
-        
         try:
+            user_ip_str = request.remote_addr
+            user_agent_str = request.headers.get('User-Agent', '')
+            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
+            if not user_ip_record:
+                user_ip_record = UserIp(ip_str=user_ip_str)
+                db.session.add(user_ip_record)
+                db.session.flush()
+            
+            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
+            if not user_agent_record:
+                user_agent_record = UserAgent(user_agent_str=user_agent_str)
+                db.session.add(user_agent_record)
+                db.session.flush()
+
             if not request.json:
                 return {
                     "status": "error",
@@ -185,18 +187,56 @@ class VerifyCertificationCode(Resource):
             user = User.query.filter_by(
                 email=verification_data.email
             ).first()
+            
+            # 응답 데이터 구조
+            response_data: dict[str, Any] = {
+                "verified": True,
+                "user_exists": user is not None
+            }
+            
+            # 사용자가 존재하면 토큰 생성
+            if user is not None:
+                # 기존 로그인 로그 업데이트 또는 새로 생성
+                existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
                 
+                if existing_log:
+                    # 기존 로그 업데이트
+                    existing_log.event_at = datetime.now(timezone.utc)
+                    existing_log.event_at_unix = int(time.time())
+                    existing_log.ip_id = user_ip_record.id
+                    existing_log.user_agent_id = user_agent_record.id
+                    db.session.commit()
+                else:
+                    # 새 로그 생성
+                    user_login_log = UserLoginLog(
+                        user_id=user.id,
+                        ip_id=user_ip_record.id,
+                        user_agent_id=user_agent_record.id
+                    )
+                    db.session.add(user_login_log)
+                    db.session.commit()
+                
+                # 사용자 토큰 생성
+                user_token = create_user_token(user)
+                user.user_ip_id = user_ip_record.id
+                user.user_agent_id = user_agent_record.id
+
+                db.session.commit()
+
+                response_data.update({
+                    'access_token': user_token['access_token'],
+                    'refresh_token': user_token['refresh_token'],
+                    'token_type': "Bearer"
+                })
+            
             return {
                 "status": "success",
                 "message": "인증번호가 확인되었습니다.",
-                "data": {
-                    "verified": True,
-                    "user_exists": True if user is not None else False
-                }
+                "data": response_data
             }, 200
-            
+                
         except Exception as e:
-            logger.error(f"인증번호 확인 중 오류가 발생했습니다: {str(e)}")
+            app_logger.error(f"인증번호 확인 중 오류가 발생했습니다: {str(e)}")
             return {
                 "status": "error",
                 "message": f"인증번호 확인 중 오류가 발생했습니다: {str(e)}",
