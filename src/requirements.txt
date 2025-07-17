@@ -12,3 +12,4 @@ pydantic
 sshtunnel
 flask-restx
 PyJWT
+requests
