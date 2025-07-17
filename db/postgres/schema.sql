@@ -40,7 +40,6 @@ CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
     role_id BIGINT NULL,
     nickname VARCHAR(50) NULL,
     bio TEXT NULL,
@@ -62,7 +61,6 @@ COMMENT ON TABLE users IS '사용자 정보 테이블';
 COMMENT ON COLUMN users.id IS '사용자ID';
 COMMENT ON COLUMN users.name IS '사용자명';
 COMMENT ON COLUMN users.email IS '이메일';
-COMMENT ON COLUMN users.password IS '비밀번호';
 COMMENT ON COLUMN users.role_id IS '권한';
 COMMENT ON COLUMN users.nickname IS '닉네임';
 COMMENT ON COLUMN users.bio IS '자기소개';

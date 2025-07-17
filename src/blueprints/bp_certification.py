@@ -23,7 +23,7 @@ from service.certification_logic.certification_service import (
     cleanup_expired_codes
 )
 from service.user_logic.user_service import create_user_token
-from datetime import datetime, timezone
+from datetime import datetime
 import time
 
 certification_bp = Blueprint("certification", __name__, url_prefix=f'/{settings.API_PREFIX}')
@@ -201,7 +201,7 @@ class VerifyCertificationCode(Resource):
                 
                 if existing_log:
                     # 기존 로그 업데이트
-                    existing_log.event_at = datetime.now(timezone.utc)
+                    existing_log.event_at = datetime.now()
                     existing_log.event_at_unix = int(time.time())
                     existing_log.ip_id = user_ip_record.id
                     existing_log.user_agent_id = user_agent_record.id
