@@ -63,7 +63,7 @@ CloakBox 이메일 인증번호를 안내드립니다.
 타인에게 인증번호를 알려주지 마세요.
 
 감사합니다.
-CloakBox 팀
+CloakBox 팀.
 """
     try:
         email_manager.send_email(email, subject, body)
