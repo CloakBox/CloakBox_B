@@ -12,11 +12,10 @@ from service.user_logic import user_service
 from swagger_config import user_ns
 from models.user_model.user_schemas import (
     user_register_model, 
-    user_login_model, 
     user_login_response_model,
 )
 from sqlalchemy import or_
-from datetime import datetime, timezone
+from datetime import datetime
 import time
 
 # Blueprint 생성
@@ -82,14 +81,13 @@ class UserRegister(Resource):
                         "message": "이미 존재하는 이름입니다."
                     }, 400
             
-            # 비밀번호 암호화
-            hashed_password = user_service.hash_password(user_data.password)
-            
             # 새 사용자 생성
             new_user = User(
                 name=user_data.name,
                 email=user_data.email,
-                password=hashed_password
+                nickname=user_data.nickname,
+                gender=user_data.gender,
+                bio=user_data.bio
             )
             
             db.session.add(new_user)
@@ -105,7 +103,7 @@ class UserRegister(Resource):
                 
                 if existing_log:
                     # 기존 로그 업데이트
-                    existing_log.event_at = datetime.now(timezone.utc)
+                    existing_log.event_at = datetime.now()
                     existing_log.event_at_unix = int(time.time())
                     existing_log.ip_id = user_ip_record.id
                     existing_log.user_agent_id = user_agent_record.id
@@ -146,128 +144,128 @@ class UserRegister(Resource):
                 "message": f"회원가입 중 오류가 발생했습니다: {str(e)}"
             }, 500
 
-@user_ns.route('/login')
-class UserLogin(Resource):
-    @user_ns.expect(user_login_model)
-    @user_ns.response(200, 'Success', user_login_response_model)
-    @user_ns.response(400, 'Bad Request')
-    @user_ns.response(404, 'User Not Found')
-    @user_ns.response(500, 'Internal Server Error')
-    def post(self):
-        """사용자 로그인"""
-        try:
-            # 사용자 IP와 User-Agent 정보 추출
-            user_ip_str = request.remote_addr
-            user_agent_str = request.headers.get('User-Agent', '')
+# @user_ns.route('/login')
+# class UserLogin(Resource):
+#     @user_ns.expect(user_login_model)
+#     @user_ns.response(200, 'Success', user_login_response_model)
+#     @user_ns.response(400, 'Bad Request')
+#     @user_ns.response(404, 'User Not Found')
+#     @user_ns.response(500, 'Internal Server Error')
+#     def post(self):
+#         """사용자 로그인"""
+#         try:
+#             # 사용자 IP와 User-Agent 정보 추출
+#             user_ip_str = request.remote_addr
+#             user_agent_str = request.headers.get('User-Agent', '')
 
-            # IP 정보 저장 또는 조회
-            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
-            if not user_ip_record:
-                user_ip_record = UserIp(ip_str=user_ip_str)
-                db.session.add(user_ip_record)
-                db.session.flush()
+#             # IP 정보 저장 또는 조회
+#             user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
+#             if not user_ip_record:
+#                 user_ip_record = UserIp(ip_str=user_ip_str)
+#                 db.session.add(user_ip_record)
+#                 db.session.flush()
 
-            # User-Agent 정보 저장 또는 조회
-            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
-            if not user_agent_record:
-                user_agent_record = UserAgent(user_agent_str=user_agent_str)
-                db.session.add(user_agent_record)
-                db.session.flush()
+#             # User-Agent 정보 저장 또는 조회
+#             user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
+#             if not user_agent_record:
+#                 user_agent_record = UserAgent(user_agent_str=user_agent_str)
+#                 db.session.add(user_agent_record)
+#                 db.session.flush()
 
-            # 요청 데이터 검증
-            if not request.json:
-                app_logger.warning("로그인 요청: 요청 데이터 없음")
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다."
-                }, 400
+#             # 요청 데이터 검증
+#             if not request.json:
+#                 app_logger.warning("로그인 요청: 요청 데이터 없음")
+#                 return {
+#                     "status": "error",
+#                     "message": "요청 데이터가 없습니다."
+#                 }, 400
             
-            email = request.json.get('email')
-            password = request.json.get('password')
+#             email = request.json.get('email')
+#             password = request.json.get('password')
             
-            if not email or not password:
-                app_logger.warning("로그인 요청: 이메일 또는 비밀번호 누락")
-                return {
-                    "status": "error",
-                    "message": "이메일과 비밀번호를 입력해주세요."
-                }, 400
+#             if not email or not password:
+#                 app_logger.warning("로그인 요청: 이메일 또는 비밀번호 누락")
+#                 return {
+#                     "status": "error",
+#                     "message": "이메일과 비밀번호를 입력해주세요."
+#                 }, 400
             
-            # 사용자 조회
-            user = User.query.filter_by(email=email.lower()).first()
-            if not user:
-                app_logger.warning(f"로그인 시도: 존재하지 않는 사용자 - {email}")
-                return {
-                    "status": "error",
-                    "message": "사용자를 찾을 수 없습니다."
-                }, 404
+#             # 사용자 조회
+#             user = User.query.filter_by(email=email.lower()).first()
+#             if not user:
+#                 app_logger.warning(f"로그인 시도: 존재하지 않는 사용자 - {email}")
+#                 return {
+#                     "status": "error",
+#                     "message": "사용자를 찾을 수 없습니다."
+#                 }, 404
             
-            # 비밀번호 검증
-            if not user_service.check_password_hash(password, user.password):
-                app_logger.warning(f"로그인 시도: 잘못된 비밀번호 - {email}")
-                return {
-                    "status": "error",
-                    "message": "비밀번호가 올바르지 않습니다."
-                }, 401
+#             # 비밀번호 검증
+#             if not user_service.check_password_hash(password, user.password):
+#                 app_logger.warning(f"로그인 시도: 잘못된 비밀번호 - {email}")
+#                 return {
+#                     "status": "error",
+#                     "message": "비밀번호가 올바르지 않습니다."
+#                 }, 401
             
-            # 사용자 IP와 User-Agent 정보 업데이트
-            user.user_ip_id = user_ip_record.id
-            user.user_agent_id = user_agent_record.id
+#             # 사용자 IP와 User-Agent 정보 업데이트
+#             user.user_ip_id = user_ip_record.id
+#             user.user_agent_id = user_agent_record.id
             
-            # 기존 로그인 로그 업데이트 또는 새로 생성
-            existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
+#             # 기존 로그인 로그 업데이트 또는 새로 생성
+#             existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
             
-            if existing_log:
-                # 기존 로그 업데이트
-                existing_log.event_at = datetime.now(timezone.utc)
-                existing_log.event_at_unix = int(time.time())
-                existing_log.ip_id = user_ip_record.id
-                existing_log.user_agent_id = user_agent_record.id
-                db.session.commit()
+#             if existing_log:
+#                 # 기존 로그 업데이트
+#                 existing_log.event_at = datetime.now()
+#                 existing_log.event_at_unix = int(time.time())
+#                 existing_log.ip_id = user_ip_record.id
+#                 existing_log.user_agent_id = user_agent_record.id
+#                 db.session.commit()
 
-            else:
-                # 새 로그 생성
-                user_login_log = UserLoginLog(
-                    user_id=user.id,
-                    ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
-                )
-                db.session.add(user_login_log)
-                db.session.commit()
+#             else:
+#                 # 새 로그 생성
+#                 user_login_log = UserLoginLog(
+#                     user_id=user.id,
+#                     ip_id=user_ip_record.id,
+#                     user_agent_id=user_agent_record.id
+#                 )
+#                 db.session.add(user_login_log)
+#                 db.session.commit()
 
-            # 변경사항 커밋
-            if not transaction_manager.commit():
-                app_logger.error("로그인 시 사용자 정보 업데이트 실패")
-                return {
-                    "status": "error",
-                    "message": "로그인 처리 중 오류가 발생했습니다."
-                }, 500
+#             # 변경사항 커밋
+#             if not transaction_manager.commit():
+#                 app_logger.error("로그인 시 사용자 정보 업데이트 실패")
+#                 return {
+#                     "status": "error",
+#                     "message": "로그인 처리 중 오류가 발생했습니다."
+#                 }, 500
             
-            # JWT 토큰 생성
-            token_data = {
-                'email': user.email,
-                'nickname': user.nickname
-            }
+#             # JWT 토큰 생성
+#             token_data = {
+#                 'email': user.email,
+#                 'nickname': user.nickname
+#             }
             
-            access_token = jwt_manager.create_access_token(token_data)
-            refresh_token = jwt_manager.create_refresh_token(token_data)
+#             access_token = jwt_manager.create_access_token(token_data)
+#             refresh_token = jwt_manager.create_refresh_token(token_data)
 
-            app_logger.info(f"로그인 성공: {email} (IP: {user_ip_str}, User-Agent: {user_agent_str[:50]}...)")
-            return {
-                "status": "success",
-                "message": "로그인이 완료되었습니다.",
-                "data": {
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                }
-            }, 200
+#             app_logger.info(f"로그인 성공: {email} (IP: {user_ip_str}, User-Agent: {user_agent_str[:50]}...)")
+#             return {
+#                 "status": "success",
+#                 "message": "로그인이 완료되었습니다.",
+#                 "data": {
+#                     "access_token": access_token,
+#                     "refresh_token": refresh_token,
+#                 }
+#             }, 200
         
-        except Exception as e:
-            app_logger.error(f"로그인 중 오류: {str(e)}")
-            transaction_manager.rollback()
-            return {
-                "status": "error",
-                "message": f"로그인 중 오류가 발생했습니다: {str(e)}"
-            }, 500
+#         except Exception as e:
+#             app_logger.error(f"로그인 중 오류: {str(e)}")
+#             transaction_manager.rollback()
+#             return {
+#                 "status": "error",
+#                 "message": f"로그인 중 오류가 발생했습니다: {str(e)}"
+#             }, 500
 
 @user_ns.route('/logout')
 class UserLogout(Resource):

@@ -1,6 +1,8 @@
 from extensions import db
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from typing import Optional, Union
+from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy import func, text
 import uuid
 import settings
 
@@ -14,10 +16,10 @@ class UserCertification(db.Model):
     code = db.Column(db.String(10), nullable=False)
     recipient = db.Column(db.String(255), nullable=False)
     use_yn = db.Column(db.Boolean, default=False, nullable=True)
-    created_at = db.Column(db.DateTime(timezone=True), nullable=True)
-    created_at_unix = db.Column(db.BigInteger, nullable=True)
-    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
-    expires_at_unix = db.Column(db.BigInteger, nullable=False)
+    created_at = db.Column(TIMESTAMP(timezone=True), default=func.now(), nullable=True)
+    created_at_unix = db.Column(db.BigInteger, default=text('EXTRACT(epoch FROM now())'), nullable=True)
+    expires_at = db.Column(TIMESTAMP(timezone=True), nullable=False)
+    expires_at_unix = db.Column(db.BigInteger, default=text('EXTRACT(epoch FROM now())'), nullable=False)
     
     def __init__(self, recipient: str, code: str, user_uuid: Optional[Union[str, uuid.UUID]] = None):
         self.recipient = recipient.lower()
@@ -33,8 +35,7 @@ class UserCertification(db.Model):
         else:
             self.user_uuid = None
             
-        # UTC 시간으로 저장 (timezone-aware)
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now()
         self.created_at = current_time
         self.created_at_unix = int(current_time.timestamp())
         expire_minutes = getattr(settings, 'CERTIFICATION_CODE_EXPIRE_MINUTES', 5)
@@ -43,7 +44,7 @@ class UserCertification(db.Model):
     
     def is_expired(self) -> bool:
         """ 인증코드 만료 여부 확인 """
-        current_time_unix = int(datetime.now(timezone.utc).timestamp())
+        current_time_unix = int(datetime.now().timestamp())
         return current_time_unix > self.expires_at_unix
     
     def is_valid(self) -> bool:

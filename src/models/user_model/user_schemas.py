@@ -6,14 +6,13 @@ user_register_model = api.model('UserRegister', {
     'name': fields.String(required=True, description='사용자 이름', example='홍길동'),
     'email': fields.String(required=True, description='사용자 이메일', example='a@test.com'),
     'nickname': fields.String(required=False, description='사용자 닉네임', example='홍길동'),
-    'password': fields.String(required=True, description='사용자 비밀번호', example='password'),
-    'confirm_password': fields.String(required=True, description='사용자 비밀번호 확인', example='password')
+    'gender': fields.String(required=False, description='성별', example='Woman, Man'),
+    'bio': fields.String(required=False, description='자기소개', example='안녕하세요, 홍길동입니다.'),
 })
 
 # 사용자 로그인 요청 모델
 user_login_model = api.model('UserLogin', {
     'email': fields.String(required=True, description='사용자 이메일', example='a@test.com'),
-    'password': fields.String(required=True, description='사용자 비밀번호', example='password'),
 })
 
 # 사용자 정보 모델

@@ -5,10 +5,10 @@ import re
 class UserRegisterDTO(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="사용자 이름")
-    nickname: Optional[str] = Field(..., min_length=1, max_length=255, description="사용자 닉네임")
     email: str = Field(..., description="사용자 이메일")
-    password: str = Field(..., min_length=1, description="비밀번호")
-    confirm_password: str = Field(..., min_length=1, description="비밀번호 확인")
+    nickname: Optional[str] = Field(None, min_length=1, max_length=255, description="사용자 닉네임")
+    gender: Optional[str] = Field(None, description="성별")
+    bio: Optional[str] = Field(None, description="자기소개")
     
     class Config:
         strict = True
@@ -42,10 +42,10 @@ class UserRegisterDTO(BaseModel):
         
     #     return value
     
-    @field_validator('confirm_password')
-    @classmethod
-    def passwords_match(cls, value: str, info: Any) -> str:
-        data = info.data
-        if 'password' in data and value != data['password']:
-            raise ValueError('비밀번호가 일치하지 않습니다.')
-        return value
+    # @field_validator('confirm_password')
+    # @classmethod
+    # def passwords_match(cls, value: str, info: Any) -> str:
+    #     data = info.data
+    #     if 'password' in data and value != data['password']:
+    #         raise ValueError('비밀번호가 일치하지 않습니다.')
+    #     return value

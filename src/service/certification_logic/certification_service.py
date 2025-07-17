@@ -1,7 +1,7 @@
 import random
 import string
 from typing import Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from sqlalchemy import desc
 from models.certification_model.certification import UserCertification
 from utils.email_manager import EmailManager
@@ -90,7 +90,7 @@ def verify_certification_code(email: str, code: str) -> Optional[UserCertificati
 
 def cleanup_expired_codes():
     """ 만료된 인증번호 정리 """
-    current_time_unix = int(datetime.now(timezone.utc).timestamp())
+    current_time_unix = int(datetime.now().timestamp())
     expired_codes = UserCertification.query.filter(
         UserCertification.expires_at_unix < current_time_unix
     ).all()
@@ -102,7 +102,7 @@ def cleanup_expired_codes():
 
 def can_create_new_code(email: str) -> bool:
     """ 새로운 인증번호 생성 가능 여부 확인 """
-    one_minute_ago = datetime.now(timezone.utc) - timedelta(minutes=1)
+    one_minute_ago = datetime.now() - timedelta(minutes=1)
     
     recent_code = UserCertification.query.filter(
         UserCertification.recipient == email.lower(),
