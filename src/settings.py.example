@@ -24,6 +24,11 @@ GOOGLE_CLIENT_ID = "..."
 GOOGLE_CLIENT_SECRET = "..."
 GOOGLE_REDIRECT_URI = "..."
 
+### 네이버 로그인 설정 ###
+
+NAVER_CLIENT_ID = "..."
+NAVER_CLIENT_SECRET = "..."
+NAVER_REDIRECT_URI = "..."
 
 ### 인증번호 설정 ###
 
