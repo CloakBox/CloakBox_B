@@ -26,3 +26,4 @@ api = Api(
 user_ns = api.namespace('user', description='사용자 관련 API')
 system_ns = api.namespace('system', description='시스템 관련 API')
 certification_ns = api.namespace('certification', description='인증 관련 API')
+kakao_ns = api.namespace('kakao', description='카카오 관련 API')
