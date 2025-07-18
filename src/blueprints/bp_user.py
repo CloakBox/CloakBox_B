@@ -7,12 +7,21 @@ from models.user_model.user import User
 from models.user_model.user_ip import UserIp
 from models.user_model.user_agent import UserAgent
 from models.user_model.user_login_log import UserLoginLog
+from models.user_model.user_setting import UserSetting
 from models.user_model.user_register_dto import UserRegisterDTO
+from models.user_model.user_profile_update_dto import UserProfileUpdateDTO
 from service.user_logic import user_service
 from swagger_config import user_ns
 from models.user_model.user_schemas import (
     user_register_model, 
     user_login_response_model,
+    user_profile_response_model,
+    user_profile_update_model,
+    auth_error_response_model,
+    profile_error_response_model,
+    user_profile_update_response_model,
+    validation_error_response_model,
+    user_logout_response_model
 )
 from sqlalchemy import or_
 from datetime import datetime
@@ -80,6 +89,16 @@ class UserRegister(Resource):
                         "status": "error",
                         "message": "이미 존재하는 이름입니다."
                     }, 400
+
+            # 사용자 설정 생성
+            new_user_setting = UserSetting(
+                dark_mode='N',
+                editor_mode='light',
+                lang_cd='ko'
+            )
+            
+            db.session.add(new_user_setting)
+            db.session.flush()
             
             # 새 사용자 생성
             new_user = User(
@@ -87,10 +106,12 @@ class UserRegister(Resource):
                 email=user_data.email,
                 nickname=user_data.nickname,
                 gender=user_data.gender,
-                bio=user_data.bio
+                bio=user_data.bio,
+                user_setting_id=new_user_setting.id
             )
             
             db.session.add(new_user)
+            db.session.flush()
             
             # 트랜잭션 매니저를 통한 안전한 커밋
             if transaction_manager.commit():
@@ -269,9 +290,36 @@ class UserRegister(Resource):
 
 @user_ns.route('/logout')
 class UserLogout(Resource):
-    @user_ns.doc(security='Bearer')
-    @user_ns.response(200, 'Success')
-    @user_ns.response(500, 'Internal Server Error')
+    @user_ns.doc(
+        security='Bearer',
+        description="""
+        **사용자 로그아웃**
+        
+        인증된 사용자를 로그아웃시키고 토큰을 무효화합니다.
+        
+        **필요한 권한:**
+        - Bearer 토큰을 통한 사용자 인증
+        
+        **동작:**
+        - 현재 토큰을 무효화합니다
+        - 로그아웃 이벤트를 로그에 기록합니다
+        - IP 및 User-Agent 정보를 저장합니다
+        
+        **참고사항:**
+        - 로그아웃 후 해당 토큰은 더 이상 사용할 수 없습니다
+        - 새로운 로그인이 필요합니다
+        """,
+        responses={
+            200: ('성공', user_logout_response_model),
+            401: ('인증 실패', auth_error_response_model),
+            404: ('사용자 없음', profile_error_response_model),
+            500: ('서버 오류', profile_error_response_model)
+        }
+    )
+    @user_ns.response(200, 'Success', user_logout_response_model)
+    @user_ns.response(401, 'Unauthorized', auth_error_response_model)
+    @user_ns.response(404, 'User Not Found', profile_error_response_model)
+    @user_ns.response(500, 'Internal Server Error', profile_error_response_model)
     @require_auth
     def post(self):
         """사용자 로그아웃"""
@@ -354,4 +402,146 @@ class UserLogout(Resource):
             return {
                 "status": "error",
                 "message": f"로그아웃 중 오류가 발생했습니다: {str(e)}"
+            }, 500
+
+@user_ns.route('/profile')
+class UserProfile(Resource):
+    @user_ns.doc(
+        security='Bearer',
+        description="""
+        **사용자 프로필 조회**
+        
+        인증된 사용자의 프로필 정보를 조회합니다.
+        
+        **필요한 권한:**
+        - Bearer 토큰을 통한 사용자 인증
+        
+        **응답 데이터:**
+        - id: 사용자 고유 식별자 (UUID)
+        - name: 사용자 실명
+        - email: 사용자 이메일
+        - nickname: 사용자 닉네임
+        - bio: 자기소개
+        - birth: 생년월일 (YYYY-MM-DD 형식)
+        - gender: 성별 (Man/Woman)
+        - login_type: 로그인 유형 (email/google/kakao/naver)
+        - login_yn: 로그인 활성화 여부
+        - created_at: 계정 생성일시 (ISO 8601 형식)
+        - updated_at: 계정 수정일시 (ISO 8601 형식)
+        
+        **참고사항:**
+        - 토큰에서 추출한 사용자 정보를 기반으로 조회합니다
+        - 민감한 정보는 제외하고 반환됩니다
+        """,
+        responses={
+            200: ('성공', user_profile_response_model),
+            401: ('인증 실패', auth_error_response_model),
+            404: ('사용자 없음', profile_error_response_model),
+            500: ('서버 오류', profile_error_response_model)
+        }
+    )
+    @user_ns.response(200, 'Success', user_profile_response_model)
+    @user_ns.response(401, 'Unauthorized', auth_error_response_model)
+    @user_ns.response(404, 'User Not Found', profile_error_response_model)
+    @user_ns.response(500, 'Internal Server Error', profile_error_response_model)
+    @require_auth
+    def get(self):
+        """사용자 프로필 조회"""
+        try:
+            # Request에서 사용자 정보 추출
+            user_info = jwt_manager.validate_request_and_extract_user(request)
+            
+            # 사용자 정보를 사용하여 사용자 프로필 조회    
+            user_profile = user_service.get_user_profile_by_user_info(user_info)
+            
+            return {
+                "status": "success",
+                "message": "사용자 프로필 조회가 완료되었습니다.",
+                "data": user_profile
+            }, 200
+        
+        except Exception as e:
+            app_logger.error(f"사용자 프로필 조회 중 오류: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"사용자 프로필 조회 중 오류가 발생했습니다: {str(e)}"
+            }, 500
+
+    @user_ns.doc(
+        security='Bearer',
+        description="""
+        **사용자 프로필 수정**
+        
+        인증된 사용자의 프로필 정보를 수정합니다.
+        
+        **필요한 권한:**
+        - Bearer 토큰을 통한 사용자 인증
+        
+        **수정 가능한 필드:**
+        - nickname: 닉네임 (1-255자, 선택사항)
+        - bio: 자기소개 (선택사항)
+        
+        **참고사항:**
+        - 모든 필드는 선택사항입니다
+        - 제공되지 않은 필드는 기존 값을 유지합니다
+        - nickname은 최소 1자 이상이어야 합니다
+        - 빈 문자열("")을 보내면 해당 필드가 null로 설정됩니다
+        
+        **요청 예시:**
+        ```json
+        {
+            "nickname": "새로운닉네임",
+            "bio": "새로운 자기소개입니다."
+        }
+        ```
+        """,
+        responses={
+            200: ('성공', user_profile_update_response_model),
+            400: ('입력 데이터 오류', validation_error_response_model),
+            401: ('인증 실패', auth_error_response_model),
+            404: ('사용자 없음', profile_error_response_model),
+            500: ('서버 오류', profile_error_response_model)
+        }
+    )
+    @user_ns.expect(user_profile_update_model)
+    @user_ns.response(200, 'Success', user_profile_update_response_model)
+    @user_ns.response(400, 'Bad Request', validation_error_response_model)
+    @user_ns.response(401, 'Unauthorized', auth_error_response_model)
+    @user_ns.response(404, 'User Not Found', profile_error_response_model)
+    @user_ns.response(500, 'Internal Server Error', profile_error_response_model)
+    @require_auth
+    def post(self):
+        """사용자 프로필 수정"""
+        try:
+            # Request에서 사용자 정보 추출
+            user_info = jwt_manager.validate_request_and_extract_user(request)
+            
+            # Request에서 사용자 프로필 수정 데이터 추출
+            request_data = request.json if request.json else {}
+            
+            # Pydantic 모델을 사용하여 데이터 검증
+            try:
+                user_profile_update_data = UserProfileUpdateDTO(**request_data)
+            except ValidationError as e:
+                app_logger.warning(f"프로필 수정 요청: 입력 데이터 검증 실패 - {e.errors()}")
+                return {
+                    "status": "error",
+                    "message": "입력 데이터 검증 실패",
+                    "errors": e.errors()
+                }, 400
+            
+            # 토큰을 사용하여 사용자 프로필 수정
+            user_profile = user_service.update_user_profile_by_user_info(user_info, user_profile_update_data)
+            
+            return {
+                "status": "success",
+                "message": "사용자 프로필 수정이 완료되었습니다.",
+                "data": user_profile
+            }, 200
+            
+        except Exception as e:
+            app_logger.error(f"사용자 프로필 수정 중 오류: {str(e)}")
+            return {
+                "status": "error",
+                "message": f"사용자 프로필 수정 중 오류가 발생했습니다: {str(e)}"
             }, 500
