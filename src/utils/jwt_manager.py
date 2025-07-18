@@ -128,7 +128,7 @@ class JWTManager:
             self.logger.error(f"사용자 정보 추출 중 오류: {str(e)}")
             return None
 
-    def validate_request_and_extract_user(self) -> Optional[Dict[str, Any]]:
+    def validate_request_and_extract_user(self, request) -> Optional[Dict[str, Any]]:
         """Request에서 토큰을 검증하고 사용자 정보 추출"""
         try:
             # Authorization 헤더 확인

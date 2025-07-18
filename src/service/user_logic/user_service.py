@@ -1,7 +1,8 @@
 import bcrypt
-from typing import Optional
 from models.user_model.user import User
 from extensions import jwt_manager, app_logger
+from models.user_model.user_profile_update_dto import UserProfileUpdateDTO
+from extensions import db
 
 def hash_password(password: str) -> str:
     """
@@ -53,8 +54,8 @@ def create_user_token(user: User) -> dict[str, str]:
     """
     try:
         payload = {
-            'user_nickname': user.nickname,
-            'user_email': user.email
+            'nickname': user.nickname,
+            'email': user.email
         }
         access_token = jwt_manager.create_access_token(payload)
         refresh_token = jwt_manager.create_refresh_token(payload)
@@ -66,3 +67,48 @@ def create_user_token(user: User) -> dict[str, str]:
 
     except Exception as e:
         raise Exception(f"사용자 토큰 생성 중 오류가 발생했습니다: {e}")
+
+def get_user_profile_by_user_info(user_info: dict) -> dict:
+    """
+    토큰을 사용하여 사용자 프로필을 조회합니다.
+    """
+    try:
+        user_email = user_info.get('user_email') or user_info.get('email')
+        
+        if not user_email:
+            raise Exception("토큰에서 이메일 정보를 찾을 수 없습니다.")
+        
+        user = User.query.filter_by(email=user_email).first()
+        
+        if not user:
+            raise Exception("사용자를 찾을 수 없습니다.")
+        
+        return user.to_dict()
+    
+    except Exception as e:
+        raise Exception(f"사용자 프로필 조회 중 오류가 발생했습니다: {e}")
+
+def update_user_profile_by_user_info(user_info: dict, user_profile_update_data: UserProfileUpdateDTO) -> dict:
+    """
+    사용자 프로필을 수정합니다.
+    """
+    try:
+        user_email = user_info.get('user_email') or user_info.get('email')
+        
+        if not user_email:
+            raise Exception("토큰에서 이메일 정보를 찾을 수 없습니다.")
+        
+        user = User.query.filter_by(email=user_email).first()
+        
+        if not user:
+            raise Exception("사용자를 찾을 수 없습니다.")
+        
+        user.nickname = user_profile_update_data.nickname
+        user.bio = user_profile_update_data.bio
+        
+        db.session.commit()
+        
+        return user.to_dict()
+    
+    except Exception as e:
+        raise Exception(f"사용자 프로필 수정 중 오류가 발생했습니다: {e}")
