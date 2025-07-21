@@ -95,29 +95,15 @@ class GoogleLogin(Resource):
             user = User.query.filter_by(email=email.lower()).first()
             
             if not user:
-                # 새 사용자 생성 (구글 로그인 사용자)
-                user = User(
-                    name=name or email.split('@')[0],
-                    email=email.lower(),
-                    nickname=name or email.split('@')[0],
-                    gender='',
-                    bio='',
-                    login_type='google',
-                    user_ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
-                )
-                db.session.add(user)
-                db.session.flush()
-            else:
-                # 기존 사용자 정보 업데이트
-                user.user_ip_id = user_ip_record.id
-                user.user_agent_id = user_agent_record.id
-                user.login_type = 'google'
-                if name and not user.name:
-                    user.name = name
-                if name and not user.nickname:
-                    user.nickname = name
-
+                return {
+                    "status": "success",
+                    "message": "유저가 존재하지 않습니다.",
+                    "data": {
+                        'is_exist': False,
+                        'code': google_user_info
+                    }
+                }, 200
+            
             # 4. 로그인 로그 기록
             existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
             
@@ -235,18 +221,92 @@ class GoogleCallback(Resource):
                     "error": "Authorization code is required"
                 }, 400
             
+            # 사용자 IP와 User-Agent 정보 추출
+            user_ip_str = request.remote_addr
+            user_agent_str = request.headers.get('User-Agent', '')
+
+            # IP 정보 저장 또는 조회
+            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
+            if not user_ip_record:
+                user_ip_record = UserIp(ip_str=user_ip_str)
+                db.session.add(user_ip_record)
+                db.session.flush()
+
+            # User-Agent 정보 저장 또는 조회
+            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
+            if not user_agent_record:
+                user_agent_record = UserAgent(user_agent_str=user_agent_str)
+                db.session.add(user_agent_record)
+                db.session.flush()
+            
+            # 1. 토큰 교환
             google_manager = GoogleManager()
             token_data = google_manager.exchange_code_for_token(code)
+            
+            access_token = token_data.get('access_token')
+            
+            # 2. 구글 사용자 정보 조회
+            google_user_info = google_manager.get_user_info(access_token)
+            
+            email = google_user_info.get('email')
+            name = google_user_info.get('name', '')
+            
+            if not email:
+                return {
+                    "status": "error",
+                    "message": "구글 계정에서 이메일 정보를 가져올 수 없습니다.",
+                    "error": "Email not available from Google"
+                }, 400
+            
+            # 3. 기존 사용자 확인
+            user = User.query.filter_by(email=email.lower()).first()
+            
+            is_need_info = False
+            
+            # 기존 사용자가 없으면 새로 생성
+            if not user:
+                is_need_info = True
+                user = User(
+                    name=name or email.split('@')[0],
+                    email=email.lower(),
+                    nickname='',
+                    gender='',
+                    bio='',
+                    login_type='google',
+                    user_ip_id=user_ip_record.id,
+                    user_agent_id=user_agent_record.id
+                )
+                db.session.add(user)
+                db.session.flush()
+            
+            # 4. 로그인 로그 기록
+            existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
+            
+            if existing_log:
+                existing_log.event_at = datetime.now()
+                existing_log.event_at_unix = int(time.time())
+                existing_log.ip_id = user_ip_record.id
+                existing_log.user_agent_id = user_agent_record.id
+            else:
+                user_login_log = UserLoginLog(
+                    user_id=user.id,
+                    ip_id=user_ip_record.id,
+                    user_agent_id=user_agent_record.id
+                )
+                db.session.add(user_login_log)
+            
+            db.session.commit()
+            
+            # 5. JWT 토큰 생성
+            user_token = create_user_token(user)
             
             return {
                 "status": "success",
                 "message": "토큰 교환이 완료되었습니다.",
                 "data": {
-                    "access_token": token_data.get('access_token'),
-                    "refresh_token": token_data.get('refresh_token'),
-                    "token_type": token_data.get('token_type', 'Bearer'),
-                    "expires_in": token_data.get('expires_in'),
-                    "scope": token_data.get('scope')
+                    "is_need_info": is_need_info,
+                    "access_token": user_token['access_token'],
+                    "refresh_token": user_token['refresh_token']
                 }
             }, 200
             
