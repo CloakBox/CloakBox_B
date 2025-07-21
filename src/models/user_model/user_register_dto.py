@@ -4,8 +4,6 @@ import re
 
 class UserRegisterDTO(BaseModel):
 
-    name: str = Field(..., min_length=1, max_length=255, description="사용자 이름")
-    email: str = Field(..., description="사용자 이메일")
     nickname: Optional[str] = Field(None, min_length=1, max_length=255, description="사용자 닉네임")
     gender: Optional[str] = Field(None, description="성별")
     bio: Optional[str] = Field(None, description="자기소개")
@@ -13,13 +11,13 @@ class UserRegisterDTO(BaseModel):
     class Config:
         strict = True
     
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, value: str) -> str:
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, value):
-            raise ValueError('올바른 이메일 형식이 아닙니다.')
-        return value.lower()
+    # @field_validator('email')
+    # @classmethod
+    # def validate_email(cls, value: str) -> str:
+    #     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    #     if not re.match(email_pattern, value):
+    #         raise ValueError('올바른 이메일 형식이 아닙니다.')
+    #     return value.lower()
     
     # @field_validator('password')
     # @classmethod

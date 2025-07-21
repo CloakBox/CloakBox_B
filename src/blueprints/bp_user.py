@@ -36,6 +36,7 @@ class UserRegister(Resource):
     @user_ns.response(201, 'Success', user_login_response_model)
     @user_ns.response(400, 'Bad Request')
     @user_ns.response(500, 'Internal Server Error')
+    @require_auth
     def post(self):
         """사용자 회원가입"""
         try:

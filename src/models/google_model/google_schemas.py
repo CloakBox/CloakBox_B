@@ -42,9 +42,7 @@ google_callback_success_model = api.model('GoogleCallbackSuccess', {
     'data': fields.Nested(api.model('GoogleCallbackData', {
         'access_token': fields.String(description='액세스 토큰'),
         'refresh_token': fields.String(description='리프레시 토큰'),
-        'token_type': fields.String(description='토큰 타입'),
-        'expires_in': fields.Integer(description='토큰 만료 시간'),
-        'scope': fields.String(description='권한 범위')
+        'is_need_info': fields.Boolean(description='유저 정보 필요 여부')
     }))
 })
 

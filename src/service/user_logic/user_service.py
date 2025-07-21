@@ -54,8 +54,12 @@ def create_user_token(user: User) -> dict[str, str]:
     """
     try:
         payload = {
+            'user_id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'bio': user.bio,
             'nickname': user.nickname,
-            'email': user.email
+            'gender': user.gender
         }
         access_token = jwt_manager.create_access_token(payload)
         refresh_token = jwt_manager.create_refresh_token(payload)
