@@ -39,11 +39,9 @@ kakao_callback_success_model = api.model('KakaoCallbackSuccess', {
     'status': fields.String(description='응답 상태', example='success'),
     'message': fields.String(description='응답 메시지'),
     'data': fields.Nested(api.model('KakaoCallbackData', {
-        'access_token': fields.String(description='액세스 토큰'),
-        'refresh_token': fields.String(description='리프레시 토큰'),
-        'token_type': fields.String(description='토큰 타입'),
-        'expires_in': fields.Integer(description='토큰 만료 시간'),
-        'scope': fields.String(description='권한 범위')
+        'is_need_info': fields.Boolean(description='사용자 정보 입력 여부'),
+        'access_token': fields.String(description='JWT 액세스 토큰'),
+        'refresh_token': fields.String(description='JWT 리프레시 토큰')
     }))
 })
 
