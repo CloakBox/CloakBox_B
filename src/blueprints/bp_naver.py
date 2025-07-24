@@ -5,10 +5,8 @@ from models.user_model.user import User
 from models.user_model.user_ip import UserIp
 from models.user_model.user_agent import UserAgent
 from models.user_model.user_login_log import UserLoginLog
-from typing import Dict, Any
 import settings
 from swagger_config import naver_ns
-from pydantic import ValidationError
 from models.naver_model.naver_schemas import (
     naver_auth_model,
     naver_auth_success_model,
@@ -25,6 +23,7 @@ from utils.naver_manager import NaverManager
 from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
+from utils import func
 
 naver_bp = Blueprint("naver", __name__, url_prefix=f'/{settings.API_PREFIX}')
 
@@ -62,24 +61,10 @@ class NaverLogin(Resource):
                     "error": "State parameter is required"
                 }, 400
             
-            # 사용자 IP와 User-Agent 정보 추출
-            user_ip_str = request.remote_addr
-            user_agent_str = request.headers.get('User-Agent', '')
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
 
-            # IP 정보 저장 또는 조회
-            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
-            if not user_ip_record:
-                user_ip_record = UserIp(ip_str=user_ip_str)
-                db.session.add(user_ip_record)
-                db.session.flush()
-
-            # User-Agent 정보 저장 또는 조회
-            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
-            if not user_agent_record:
-                user_agent_record = UserAgent(user_agent_str=user_agent_str)
-                db.session.add(user_agent_record)
-                db.session.flush()
-            
             naver_manager = NaverManager()
             
             # 1. 토큰 교환
@@ -114,15 +99,15 @@ class NaverLogin(Resource):
                     gender='',
                     bio='',
                     login_type='naver',
-                    user_ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
+                    user_ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
                 )
                 db.session.add(user)
                 db.session.flush()
             else:
                 # 기존 사용자 정보 업데이트
-                user.user_ip_id = user_ip_record.id
-                user.user_agent_id = user_agent_record.id
+                user.user_ip_id = user_ip_id
+                user.user_agent_id = user_agent_id
                 user.login_type = 'naver'
                 if name and not user.name:
                     user.name = name
@@ -135,13 +120,13 @@ class NaverLogin(Resource):
             if existing_log:
                 existing_log.event_at = datetime.now()
                 existing_log.event_at_unix = int(time.time())
-                existing_log.ip_id = user_ip_record.id
-                existing_log.user_agent_id = user_agent_record.id
+                existing_log.ip_id = user_ip_id
+                existing_log.user_agent_id = user_agent_id
             else:
                 user_login_log = UserLoginLog(
                     user_id=user.id,
-                    ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
+                    ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
                 )
                 db.session.add(user_login_log)
             
@@ -255,18 +240,81 @@ class NaverCallback(Resource):
                     "error": "State parameter is required"
                 }, 400
             
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
+            
+            # 1. 토큰 교환
             naver_manager = NaverManager()
             token_data = naver_manager.exchange_code_for_token(code, state)
+            
+            access_token = token_data.get('access_token')
+            
+            # 2. 네이버 사용자 정보 조회
+            naver_user_info = naver_manager.get_user_info(access_token)
+            response = naver_user_info.get('response', {})
+            
+            # 네이버 이메일이 없는 경우 처리
+            if not response.get('email'):
+                return {
+                    "status": "error",
+                    "message": "네이버 계정에서 이메일 정보를 가져올 수 없습니다.",
+                    "error": "Email not available from Naver"
+                }, 400
+            
+            email = response['email']
+            nickname = response.get('nickname', '')
+            name = response.get('name', '')
+            
+            # 3. 기존 사용자 확인 또는 새 사용자 생성
+            user = User.query.filter_by(email=email.lower()).first()
+            
+            is_need_info = False
+            
+            if not user:
+                # 새 사용자 생성 (네이버 로그인 사용자)
+                is_need_info = True
+                user = User(
+                    name=name or nickname or email.split('@')[0],
+                    email=email.lower(),
+                    nickname=nickname or name or email.split('@')[0],
+                    gender='',
+                    bio='',
+                    login_type='naver',
+                    user_ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
+                )
+                db.session.add(user)
+                db.session.flush()
+            
+            # 4. 로그인 로그 기록
+            existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
+            
+            if existing_log:
+                existing_log.event_at = datetime.now()
+                existing_log.event_at_unix = int(time.time())
+                existing_log.ip_id = user_ip_id
+                existing_log.user_agent_id = user_agent_id
+            else:
+                user_login_log = UserLoginLog(
+                    user_id=user.id,
+                    ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
+                )
+                db.session.add(user_login_log)
+            
+            db.session.commit()
+            
+            # 5. JWT 토큰 생성
+            user_token = create_user_token(user)
             
             return {
                 "status": "success",
                 "message": "토큰 교환이 완료되었습니다.",
                 "data": {
-                    "access_token": token_data.get('access_token'),
-                    "refresh_token": token_data.get('refresh_token'),
-                    "token_type": token_data.get('token_type', 'bearer'),
-                    "expires_in": token_data.get('expires_in'),
-                    "state": state
+                    "is_need_info": is_need_info,
+                    "access_token": user_token['access_token'],
+                    "refresh_token": user_token['refresh_token']
                 }
             }, 200
             

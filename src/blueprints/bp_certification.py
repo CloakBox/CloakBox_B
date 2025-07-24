@@ -25,6 +25,7 @@ from service.certification_logic.certification_service import (
 from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
+from utils import func
 
 certification_bp = Blueprint("certification", __name__, url_prefix=f'/{settings.API_PREFIX}')
 
@@ -136,20 +137,10 @@ class VerifyCertificationCode(Resource):
     def post(self):
         """인증번호 검증"""
         try:
-            user_ip_str = request.remote_addr
-            user_agent_str = request.headers.get('User-Agent', '')
-            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
-            if not user_ip_record:
-                user_ip_record = UserIp(ip_str=user_ip_str)
-                db.session.add(user_ip_record)
-                db.session.flush()
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
             
-            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
-            if not user_agent_record:
-                user_agent_record = UserAgent(user_agent_str=user_agent_str)
-                db.session.add(user_agent_record)
-                db.session.flush()
-
             if not request.json:
                 return {
                     "status": "error",
@@ -203,30 +194,29 @@ class VerifyCertificationCode(Resource):
                     # 기존 로그 업데이트
                     existing_log.event_at = datetime.now()
                     existing_log.event_at_unix = int(time.time())
-                    existing_log.ip_id = user_ip_record.id
-                    existing_log.user_agent_id = user_agent_record.id
+                    existing_log.ip_id = user_ip_id
+                    existing_log.user_agent_id = user_agent_id
                     db.session.commit()
                 else:
                     # 새 로그 생성
                     user_login_log = UserLoginLog(
                         user_id=user.id,
-                        ip_id=user_ip_record.id,
-                        user_agent_id=user_agent_record.id
+                        ip_id=user_ip_id,
+                        user_agent_id=user_agent_id
                     )
                     db.session.add(user_login_log)
                     db.session.commit()
                 
                 # 사용자 토큰 생성
                 user_token = create_user_token(user)
-                user.user_ip_id = user_ip_record.id
-                user.user_agent_id = user_agent_record.id
+                user.user_ip_id = user_ip_id
+                user.user_agent_id = user_agent_id
 
                 db.session.commit()
 
                 response_data.update({
                     'access_token': user_token['access_token'],
-                    'refresh_token': user_token['refresh_token'],
-                    'token_type': "Bearer"
+                    'refresh_token': user_token['refresh_token']
                 })
             
             return {

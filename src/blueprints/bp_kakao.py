@@ -2,13 +2,9 @@ from flask import Blueprint, request, jsonify
 from flask_restx import Resource
 from extensions import db, app_logger
 from models.user_model.user import User
-from models.user_model.user_ip import UserIp
-from models.user_model.user_agent import UserAgent
 from models.user_model.user_login_log import UserLoginLog
-from typing import Dict, Any
 import settings
 from swagger_config import kakao_ns
-from pydantic import ValidationError
 from models.kakao_model.kakao_schemas import (
     kakao_auth_model,
     kakao_auth_success_model,
@@ -27,6 +23,7 @@ from utils.kakao_manager import KaKaoManager
 from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
+from utils import func
 
 kakao_bp = Blueprint("kakao", __name__, url_prefix=f'/{settings.API_PREFIX}')
 
@@ -55,24 +52,10 @@ class KakaoLogin(Resource):
                     "error": "Authorization code is required"
                 }, 400
             
-            # 사용자 IP와 User-Agent 정보 추출
-            user_ip_str = request.remote_addr
-            user_agent_str = request.headers.get('User-Agent', '')
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
 
-            # IP 정보 저장 또는 조회
-            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
-            if not user_ip_record:
-                user_ip_record = UserIp(ip_str=user_ip_str)
-                db.session.add(user_ip_record)
-                db.session.flush()
-
-            # User-Agent 정보 저장 또는 조회
-            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
-            if not user_agent_record:
-                user_agent_record = UserAgent(user_agent_str=user_agent_str)
-                db.session.add(user_agent_record)
-                db.session.flush()
-            
             kakao_manager = KaKaoManager()
             
             # 1. 토큰 교환
@@ -106,15 +89,15 @@ class KakaoLogin(Resource):
                     gender='',
                     bio='',
                     login_type='kakao',
-                    user_ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
+                    user_ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
                 )
                 db.session.add(user)
                 db.session.flush()
             else:
                 # 기존 사용자 정보 업데이트
-                user.user_ip_id = user_ip_record.id
-                user.user_agent_id = user_agent_record.id
+                user.user_ip_id = user_ip_id
+                user.user_agent_id = user_agent_id
                 user.login_type = 'kakao'
                 if nickname and not user.nickname:
                     user.nickname = nickname
@@ -125,13 +108,13 @@ class KakaoLogin(Resource):
             if existing_log:
                 existing_log.event_at = datetime.now()
                 existing_log.event_at_unix = int(time.time())
-                existing_log.ip_id = user_ip_record.id
-                existing_log.user_agent_id = user_agent_record.id
+                existing_log.ip_id = user_ip_id
+                existing_log.user_agent_id = user_agent_id
             else:
                 user_login_log = UserLoginLog(
                     user_id=user.id,
-                    ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
+                    ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
                 )
                 db.session.add(user_login_log)
             
@@ -235,18 +218,79 @@ class KakaoCallback(Resource):
                     "error": "Authorization code is required"
                 }, 400
             
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
+            
+            # 1. 토큰 교환
             kakao_manager = KaKaoManager()
             token_data = kakao_manager.exchange_code_for_token(code)
+            
+            access_token = token_data.get('access_token')
+            
+            # 2. 카카오 사용자 정보 조회
+            kakao_user_info = kakao_manager.get_user_info(access_token)
+            
+            kakao_account = kakao_user_info.get('kakao_account', {})
+            email = kakao_account.get('email')
+            name = kakao_account.get('profile', {}).get('nickname', '')
+            
+            if not email:
+                return {
+                    "status": "error",
+                    "message": "카카오 계정에서 이메일 정보를 가져올 수 없습니다.",
+                    "error": "Email not available from Kakao"
+                }, 400
+            
+            # 3. 기존 사용자 확인
+            user = User.query.filter_by(email=email.lower()).first()
+            
+            is_need_info = False
+            
+            if not user:
+                # 새 사용자 생성 (카카오 로그인 사용자)
+                is_need_info = True
+                user = User(
+                    name=name or email.split('@')[0],
+                    email=email.lower(),
+                    nickname='',
+                    gender='',
+                    bio='',
+                    login_type='kakao',
+                    user_ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
+                )
+                db.session.add(user)
+                db.session.flush()
+            
+            # 4. 로그인 로그 기록
+            existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
+            
+            if existing_log:
+                existing_log.event_at = datetime.now()
+                existing_log.event_at_unix = int(time.time())
+                existing_log.ip_id = user_ip_id
+                existing_log.user_agent_id = user_agent_id
+            else:
+                user_login_log = UserLoginLog(
+                    user_id=user.id,
+                    ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
+                )
+                db.session.add(user_login_log)
+            
+            db.session.commit()
+            
+            # 5. JWT 토큰 생성
+            user_token = create_user_token(user)
             
             return {
                 "status": "success",
                 "message": "토큰 교환이 완료되었습니다.",
                 "data": {
-                    "access_token": token_data.get('access_token'),
-                    "refresh_token": token_data.get('refresh_token'),
-                    "token_type": token_data.get('token_type', 'bearer'),
-                    "expires_in": token_data.get('expires_in'),
-                    "scope": token_data.get('scope')
+                    "is_need_info": is_need_info,
+                    "access_token": user_token['access_token'],
+                    "refresh_token": user_token['refresh_token']
                 }
             }, 200
             

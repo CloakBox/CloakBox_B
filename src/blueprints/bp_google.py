@@ -2,13 +2,9 @@ from flask import Blueprint, request, jsonify
 from flask_restx import Resource
 from extensions import db, app_logger
 from models.user_model.user import User
-from models.user_model.user_ip import UserIp
-from models.user_model.user_agent import UserAgent
 from models.user_model.user_login_log import UserLoginLog
-from typing import Dict, Any
 import settings
 from swagger_config import google_ns
-from pydantic import ValidationError
 from models.google_model.google_schemas import (
     google_auth_model,
     google_auth_success_model,
@@ -25,6 +21,7 @@ from utils.google_manager import GoogleManager
 from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
+from utils import func
 
 google_bp = Blueprint('google', __name__, url_prefix=f'/{settings.API_PREFIX}')
 
@@ -53,24 +50,10 @@ class GoogleLogin(Resource):
                     "error": "Google authentication code is missing"
                 }, 400
             
-            # 사용자 IP와 User-Agent 정보 추출
-            user_ip_str = request.remote_addr
-            user_agent_str = request.headers.get('User-Agent', '')
-
-            # IP 정보 저장 또는 조회
-            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
-            if not user_ip_record:
-                user_ip_record = UserIp(ip_str=user_ip_str)
-                db.session.add(user_ip_record)
-                db.session.flush()
-
-            # User-Agent 정보 저장 또는 조회
-            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
-            if not user_agent_record:
-                user_agent_record = UserAgent(user_agent_str=user_agent_str)
-                db.session.add(user_agent_record)
-                db.session.flush()
-
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
+            
             google_manager = GoogleManager()
 
             # 1. 토큰 교환
@@ -110,13 +93,13 @@ class GoogleLogin(Resource):
             if existing_log:
                 existing_log.event_at = datetime.now()
                 existing_log.event_at_unix = int(time.time())
-                existing_log.ip_id = user_ip_record.id
-                existing_log.user_agent_id = user_agent_record.id
+                existing_log.ip_id = user_ip_id
+                existing_log.user_agent_id = user_agent_id
             else:
                 user_login_log = UserLoginLog(
                     user_id=user.id,
-                    ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
+                    ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
                 )
                 db.session.add(user_login_log)
             
@@ -221,23 +204,9 @@ class GoogleCallback(Resource):
                     "error": "Authorization code is required"
                 }, 400
             
-            # 사용자 IP와 User-Agent 정보 추출
-            user_ip_str = request.remote_addr
-            user_agent_str = request.headers.get('User-Agent', '')
-
-            # IP 정보 저장 또는 조회
-            user_ip_record = UserIp.query.filter_by(ip_str=user_ip_str).first()
-            if not user_ip_record:
-                user_ip_record = UserIp(ip_str=user_ip_str)
-                db.session.add(user_ip_record)
-                db.session.flush()
-
-            # User-Agent 정보 저장 또는 조회
-            user_agent_record = UserAgent.query.filter_by(user_agent_str=user_agent_str).first()
-            if not user_agent_record:
-                user_agent_record = UserAgent(user_agent_str=user_agent_str)
-                db.session.add(user_agent_record)
-                db.session.flush()
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
             
             # 1. 토큰 교환
             google_manager = GoogleManager()
@@ -273,8 +242,8 @@ class GoogleCallback(Resource):
                     gender='',
                     bio='',
                     login_type='google',
-                    user_ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
+                    user_ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
                 )
                 db.session.add(user)
                 db.session.flush()
@@ -285,13 +254,13 @@ class GoogleCallback(Resource):
             if existing_log:
                 existing_log.event_at = datetime.now()
                 existing_log.event_at_unix = int(time.time())
-                existing_log.ip_id = user_ip_record.id
-                existing_log.user_agent_id = user_agent_record.id
+                existing_log.ip_id = user_ip_id
+                existing_log.user_agent_id = user_agent_id
             else:
                 user_login_log = UserLoginLog(
                     user_id=user.id,
-                    ip_id=user_ip_record.id,
-                    user_agent_id=user_agent_record.id
+                    ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
                 )
                 db.session.add(user_login_log)
             
