@@ -40,10 +40,10 @@ def create_app() -> Flask:
         app.config.from_object(config.config['default'])
         init_extensions(app)
     
-    @app.before_request
-    def handle_options_request():
-        if request.method == "OPTIONS":
-            return make_response('', 204)
+    # @app.before_request
+    # def handle_options_request():
+    #     if request.method == "OPTIONS":
+    #         return make_response('', 204)
 
     @app.after_request
     def add_cors_header(response):
