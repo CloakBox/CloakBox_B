@@ -40,8 +40,6 @@ google_callback_success_model = api.model('GoogleCallbackSuccess', {
     'status': fields.String(description='응답 상태', example='success'),
     'message': fields.String(description='응답 메시지'),
     'data': fields.Nested(api.model('GoogleCallbackData', {
-        'access_token': fields.String(description='액세스 토큰'),
-        'refresh_token': fields.String(description='리프레시 토큰'),
         'is_need_info': fields.Boolean(description='유저 정보 필요 여부')
     }))
 })

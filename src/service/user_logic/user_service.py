@@ -54,7 +54,7 @@ def create_user_token(user: User) -> dict[str, str]:
     """
     try:
         payload = {
-            'user_id': user.id,
+            'user_id': str(user.id),
             'name': user.name,
             'email': user.email,
             'bio': user.bio,

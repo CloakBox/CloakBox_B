@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from flask_restx import Resource
 from extensions import db, app_logger
 from models.user_model.user import User
@@ -214,16 +214,18 @@ class VerifyCertificationCode(Resource):
 
                 db.session.commit()
 
-                response_data.update({
-                    'access_token': user_token['access_token'],
-                    'refresh_token': user_token['refresh_token']
-                })
-            
-            return {
-                "status": "success",
-                "message": "인증번호가 확인되었습니다.",
-                "data": response_data
-            }, 200
+                # 토큰을 헤더로 설정
+                response = make_response({
+                    "status": "success",
+                    "message": "인증번호가 확인되었습니다.",
+                    "data": response_data
+                }, 200)
+                
+                # 토큰을 헤더에 추가
+                response.headers['X-Access-Token'] = user_token['access_token']
+                response.headers['X-Refresh-Token'] = user_token['refresh_token']
+                
+                return response
                 
         except Exception as e:
             app_logger.error(f"인증번호 확인 중 오류가 발생했습니다: {str(e)}")
