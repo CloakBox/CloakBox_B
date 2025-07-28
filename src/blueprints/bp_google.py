@@ -1,8 +1,9 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from flask_restx import Resource
 from extensions import db, app_logger
 from models.user_model.user import User
 from models.user_model.user_login_log import UserLoginLog
+from models.user_model.user_setting import UserSetting
 import settings
 from swagger_config import google_ns
 from models.google_model.google_schemas import (
@@ -235,6 +236,17 @@ class GoogleCallback(Resource):
             # 기존 사용자가 없으면 새로 생성
             if not user:
                 is_need_info = True
+                
+                # 사용자 설정 생성
+                new_user_setting = UserSetting(
+                    dark_mode='N',
+                    editor_mode='light',
+                    lang_cd='ko'
+                )
+                
+                db.session.add(new_user_setting)
+                db.session.flush()
+                
                 user = User(
                     name=name or email.split('@')[0],
                     email=email.lower(),
@@ -243,7 +255,8 @@ class GoogleCallback(Resource):
                     bio='',
                     login_type='google',
                     user_ip_id=user_ip_id,
-                    user_agent_id=user_agent_id
+                    user_agent_id=user_agent_id,
+                    user_setting_id=new_user_setting.id
                 )
                 db.session.add(user)
                 db.session.flush()
@@ -269,15 +282,19 @@ class GoogleCallback(Resource):
             # 5. JWT 토큰 생성
             user_token = create_user_token(user)
             
-            return {
+            # 토큰을 헤더로 설정
+            response = make_response({
                 "status": "success",
                 "message": "토큰 교환이 완료되었습니다.",
                 "data": {
-                    "is_need_info": is_need_info,
-                    "access_token": user_token['access_token'],
-                    "refresh_token": user_token['refresh_token']
+                    "is_need_info": is_need_info
                 }
-            }, 200
+            }, 200)
+            
+            # 토큰을 헤더에 추가
+            response.headers['X-Access-Token'] = user_token['access_token']
+            response.headers['X-Refresh-Token'] = user_token['refresh_token']
+            return response
             
         except ValueError as e:
             app_logger.error(f"구글 토큰 교환 실패: {str(e)}")

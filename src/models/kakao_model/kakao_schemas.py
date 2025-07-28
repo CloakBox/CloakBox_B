@@ -40,8 +40,6 @@ kakao_callback_success_model = api.model('KakaoCallbackSuccess', {
     'message': fields.String(description='응답 메시지'),
     'data': fields.Nested(api.model('KakaoCallbackData', {
         'is_need_info': fields.Boolean(description='사용자 정보 입력 여부'),
-        'access_token': fields.String(description='JWT 액세스 토큰'),
-        'refresh_token': fields.String(description='JWT 리프레시 토큰')
     }))
 })
 
