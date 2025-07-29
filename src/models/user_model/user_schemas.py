@@ -90,6 +90,7 @@ user_profile_data_model = api.model('UserProfileData', {
 # 사용자 프로필 수정 요청 모델
 user_profile_update_model = api.model('UserProfileUpdate', {
     'nickname': fields.String(required=False, description='닉네임 (1-255자)', example='새로운닉네임'),
+    'gender': fields.String(required=False, description='성별', example='Man, Woman'),
     'bio': fields.String(required=False, description='자기소개', example='안녕하세요, 새로운 자기소개입니다.')
 })
 
