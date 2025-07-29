@@ -109,6 +109,7 @@ def update_user_profile_by_user_info(user_info: dict, user_profile_update_data: 
         
         user.nickname = user_profile_update_data.nickname
         user.bio = user_profile_update_data.bio
+        user.gender = user_profile_update_data.gender
         
         db.session.commit()
         
