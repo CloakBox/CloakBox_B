@@ -50,6 +50,7 @@ def create_app() -> Flask:
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Expose-Headers"] = "X-Access-Token, X-Refresh-Token"
         return response
     
     api.init_app(app)
