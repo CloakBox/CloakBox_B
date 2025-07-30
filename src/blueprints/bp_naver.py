@@ -207,23 +207,16 @@ class NaverAuth(Resource):
 
 @naver_ns.route('/callback')
 class NaverCallback(Resource):
-    @naver_ns.expect(naver_callback_model)
     @naver_ns.response(200, 'Success', naver_callback_success_model)
     @naver_ns.response(400, 'Bad Request')
     @naver_ns.response(401, 'Unauthorized')
     @naver_ns.response(500, 'Internal Server Error')
-    def post(self):
+    def get(self):
         """네이버 인증 코드를 토큰으로 교환"""
         try:
-            if not request.json:
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다.",
-                    "error": "Request data is missing"
-                }, 400
             
-            code = request.json.get('code')
-            state = request.json.get('state')
+            code = request.args.get('code')
+            state = request.args.get('state')
             
             if not code:
                 return {
