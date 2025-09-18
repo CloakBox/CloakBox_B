@@ -211,7 +211,7 @@ class NaverCallback(Resource):
     @naver_ns.response(400, 'Bad Request')
     @naver_ns.response(500, 'Internal Server Error')
     def get(self):
-        """네이버 인증 코드를 GET 방식으로 받아서 프론트엔드로 리다이렉트"""
+        """네이버 인증 코드를 GET 방식으로 받아서 직접 토큰 처리"""
         try:
             code = request.args.get('code')
             state = request.args.get('state')
@@ -230,15 +230,99 @@ class NaverCallback(Resource):
                     "error": "State parameter is required"
                 }, 400
             
-            # 프론트엔드 콜백 페이지로 리다이렉트 (code와 state를 쿼리 파라미터로 전달)
-            frontend_callback_url = f"{getattr(settings, 'NAVER_FRONTEND_CALLBACK_URL')}?code={code}&state={state}"
+            # 사용자 IP와 User-Agent 정보 저장
+            user_ip_id = func.get_user_ip(request, db)
+            user_agent_id = func.get_user_agent(request, db)
             
-            from flask import redirect
-            return redirect(frontend_callback_url)
+            # 1. 토큰 교환
+            naver_manager = NaverManager()
+            token_data = naver_manager.exchange_code_for_token(code, state)
+            
+            access_token = token_data.get('access_token')
+            
+            # 2. 네이버 사용자 정보 조회
+            naver_user_info = naver_manager.get_user_info(access_token)
+            response = naver_user_info.get('response', {})
+            
+            # 네이버 이메일이 없는 경우 처리
+            if not response.get('email'):
+                return {
+                    "status": "error",
+                    "message": "네이버 계정에서 이메일 정보를 가져올 수 없습니다.",
+                    "error": "Email not available from Naver"
+                }, 400
+            
+            email = response['email']
+            nickname = response.get('nickname', '')
+            name = response.get('name', '')
+            
+            # 3. 기존 사용자 확인 또는 새 사용자 생성
+            user = User.query.filter_by(email=email.lower()).first()
+            
+            is_need_info = False
+            
+            if not user:
+                # 새 사용자 생성 (네이버 로그인 사용자)
+                is_need_info = True
+                
+                new_user_setting = UserSetting(
+                    dark_mode='N',
+                    editor_mode='light',
+                    lang_cd='ko'
+                )
+                
+                db.session.add(new_user_setting)
+                db.session.flush()
+                
+                user = User(
+                    name=name or nickname or email.split('@')[0],
+                    email=email.lower(),
+                    nickname=nickname or name or email.split('@')[0],
+                    gender='',
+                    bio='',
+                    login_type='naver',
+                    user_ip_id=user_ip_id,
+                    user_agent_id=user_agent_id,
+                    user_setting_id=new_user_setting.id
+                )
+                db.session.add(user)
+                db.session.flush()
+            
+            # 4. 로그인 로그 기록
+            existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
+            
+            if existing_log:
+                existing_log.event_at = datetime.now()
+                existing_log.event_at_unix = int(time.time())
+                existing_log.ip_id = user_ip_id
+                existing_log.user_agent_id = user_agent_id
+            else:
+                user_login_log = UserLoginLog(
+                    user_id=user.id,
+                    ip_id=user_ip_id,
+                    user_agent_id=user_agent_id
+                )
+                db.session.add(user_login_log)
+            
+            db.session.commit()
+            
+            # 5. JWT 토큰 생성
+            user_token = create_user_token(user)
+            
+            # 토큰을 쿠키에 설정하고 프론트엔드로 리디렉트
+            response = make_response(redirect(getattr(settings, 'NAVER_FRONTEND_CALLBACK_URL')))
+            
+            # 토큰을 쿠키에 설정
+            response.set_cookie('access_token', user_token['access_token'], 
+                              max_age=30*60, httponly=True, secure=True, samesite='Lax')
+            response.set_cookie('refresh_token', user_token['refresh_token'], 
+                              max_age=24*60*60, httponly=True, secure=True, samesite='Lax')
+            
+            return response
             
         except Exception as e:
             app_logger.error(f"네이버 GET 콜백 처리 중 오류: {str(e)}")
-            error_url = f"{getattr(settings, 'NAVER_FRONTEND_CALLBACK_URL')}/?error=naver_callback_error"
+            error_url = f"{getattr(settings, 'NAVER_FRONTEND_CALLBACK_URL')}?error=naver_callback_error&message={str(e)}"
             from flask import redirect
             return redirect(error_url)
 
