@@ -207,10 +207,8 @@ class NaverAuth(Resource):
 
 @naver_ns.route('/callback')
 class NaverCallback(Resource):
-    @naver_ns.expect(naver_callback_model)
-    @naver_ns.response(200, 'Success', naver_callback_success_model)
+    @naver_ns.response(200, 'Success')
     @naver_ns.response(400, 'Bad Request')
-    @naver_ns.response(401, 'Unauthorized')
     @naver_ns.response(500, 'Internal Server Error')
     def get(self):
         """네이버 인증 코드를 GET 방식으로 받아서 프론트엔드로 리다이렉트"""
@@ -243,7 +241,12 @@ class NaverCallback(Resource):
             error_url = f"{getattr(settings, 'NAVER_REDIRECT_URI')}/login?error=naver_callback_error"
             from flask import redirect
             return redirect(error_url)
-    
+
+    @naver_ns.expect(naver_callback_model)
+    @naver_ns.response(200, 'Success', naver_callback_success_model)
+    @naver_ns.response(400, 'Bad Request')
+    @naver_ns.response(401, 'Unauthorized')
+    @naver_ns.response(500, 'Internal Server Error')
     def post(self):
         """네이버 인증 코드를 토큰으로 교환"""
         try:
