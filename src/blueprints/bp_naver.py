@@ -231,7 +231,7 @@ class NaverCallback(Resource):
                 }, 400
             
             # 프론트엔드 콜백 페이지로 리다이렉트 (code와 state를 쿼리 파라미터로 전달)
-            frontend_callback_url = f"{getattr(settings, 'NAVER_REDIRECT_URI')}/naver/callback?code={code}&state={state}"
+            frontend_callback_url = f"{getattr(settings, 'NAVER_REDIRECT_URI')}/code={code}&state={state}"
             
             from flask import redirect
             return redirect(frontend_callback_url)
