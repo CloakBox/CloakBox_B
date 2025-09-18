@@ -231,14 +231,14 @@ class NaverCallback(Resource):
                 }, 400
             
             # 프론트엔드 콜백 페이지로 리다이렉트 (code와 state를 쿼리 파라미터로 전달)
-            frontend_callback_url = f"{getattr(settings, 'NAVER_REDIRECT_URI')}?code={code}&state={state}"
+            frontend_callback_url = f"{getattr(settings, 'NAVER_FRONTEND_CALLBACK_URL')}?code={code}&state={state}"
             
             from flask import redirect
             return redirect(frontend_callback_url)
             
         except Exception as e:
             app_logger.error(f"네이버 GET 콜백 처리 중 오류: {str(e)}")
-            error_url = f"{getattr(settings, 'NAVER_REDIRECT_URI')}/login?error=naver_callback_error"
+            error_url = f"{getattr(settings, 'NAVER_FRONTEND_CALLBACK_URL')}/?error=naver_callback_error"
             from flask import redirect
             return redirect(error_url)
 
