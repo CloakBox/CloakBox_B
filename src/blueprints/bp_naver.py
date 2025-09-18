@@ -212,6 +212,38 @@ class NaverCallback(Resource):
     @naver_ns.response(400, 'Bad Request')
     @naver_ns.response(401, 'Unauthorized')
     @naver_ns.response(500, 'Internal Server Error')
+    def get(self):
+        """네이버 인증 코드를 GET 방식으로 받아서 프론트엔드로 리다이렉트"""
+        try:
+            code = request.args.get('code')
+            state = request.args.get('state')
+            
+            if not code:
+                return {
+                    "status": "error",
+                    "message": "인증 코드가 필요합니다.",
+                    "error": "Authorization code is required"
+                }, 400
+            
+            if not state:
+                return {
+                    "status": "error",
+                    "message": "상태값이 필요합니다.",
+                    "error": "State parameter is required"
+                }, 400
+            
+            # 프론트엔드 콜백 페이지로 리다이렉트 (code와 state를 쿼리 파라미터로 전달)
+            frontend_callback_url = f"{getattr(settings, 'NAVER_REDIRECT_URI')}/naver/callback?code={code}&state={state}"
+            
+            from flask import redirect
+            return redirect(frontend_callback_url)
+            
+        except Exception as e:
+            app_logger.error(f"네이버 GET 콜백 처리 중 오류: {str(e)}")
+            error_url = f"{getattr(settings, 'NAVER_REDIRECT_URI')}/login?error=naver_callback_error"
+            from flask import redirect
+            return redirect(error_url)
+    
     def post(self):
         """네이버 인증 코드를 토큰으로 교환"""
         try:
