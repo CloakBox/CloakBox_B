@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, make_response
+from flask import Blueprint, request, jsonify, make_response, redirect
 from flask_restx import Resource
 from extensions import db, app_logger
 from models.user_model.user import User
@@ -25,8 +25,150 @@ from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
 from utils import func
+from sqlalchemy.exc import SQLAlchemyError
 
 kakao_bp = Blueprint("kakao", __name__, url_prefix=f'/{settings.API_PREFIX}')
+
+# 공통 유틸리티 함수
+def create_error_response(message, error_code, status_code):
+    """에러 응답 생성"""
+    return {
+        "status": "error",
+        "message": message,
+        "error": error_code
+    }, status_code
+
+def validate_request_json():
+    """요청 JSON 데이터 검증"""
+    if not request.json:
+        return False, create_error_response("요청 데이터가 없습니다.", "REQUEST_DATA_MISSING", 400)
+    return True, None
+
+def validate_required_fields(data, required_fields):
+    """필수 필드 검증"""
+    missing_fields = [field for field in required_fields if not data.get(field)]
+    if missing_fields:
+        return False, create_error_response(
+            f"필수 필드가 없습니다: {', '.join(missing_fields)}",
+            "REQUIRED_FIELDS_MISSING",
+            400
+        )
+    return True, None
+
+def handle_database_operation(func, *args, **kwargs):
+    """DB 작업 예외 처리"""
+    try:
+        return func(*args, **kwargs)
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        app_logger.error(f"데이터베이스 오류: {str(e)}")
+        raise e
+
+def create_user_login_log(user_id, user_ip_id, user_agent_id):
+    """사용자 로그인 로그 생성 또는 업데이트"""
+    existing_log = UserLoginLog.query.filter_by(user_id=user_id).first()
+    
+    if existing_log:
+        existing_log.event_at = datetime.now()
+        existing_log.event_at_unix = int(time.time())
+        existing_log.ip_id = user_ip_id
+        existing_log.user_agent_id = user_agent_id
+    else:
+        user_login_log = UserLoginLog(
+            user_id=user_id,
+            ip_id=user_ip_id,
+            user_agent_id=user_agent_id
+        )
+        db.session.add(user_login_log)
+
+def create_or_update_user_kakao(kakao_account, user_ip_id, user_agent_id):
+    """카카오 사용자 생성 또는 업데이트"""
+    email = kakao_account['email'].lower()
+    nickname = kakao_account.get('profile', {}).get('nickname', '')
+    
+    user = User.query.filter_by(email=email).first()
+    is_need_info = False
+    
+    if not user:
+        # 새 사용자 생성
+        is_need_info = True
+        
+        new_user_setting = UserSetting(
+            dark_mode='N',
+            editor_mode='light',
+            lang_cd='ko'
+        )
+        
+        db.session.add(new_user_setting)
+        db.session.flush()
+        
+        user = User(
+            name=nickname or email.split('@')[0],
+            email=email,
+            nickname=nickname or email.split('@')[0],
+            gender='',
+            bio='',
+            login_type='kakao',
+            user_ip_id=user_ip_id,
+            user_agent_id=user_agent_id,
+            user_setting_id=new_user_setting.id
+        )
+        db.session.add(user)
+        db.session.flush()
+    else:
+        # 기존 사용자 정보 업데이트
+        user.user_ip_id = user_ip_id
+        user.user_agent_id = user_agent_id
+        user.login_type = 'kakao'
+        if nickname and not user.nickname:
+            user.nickname = nickname
+    
+    return user, is_need_info
+
+def process_kakao_login(code, request_obj):
+    """카카오 로그인 공통 처리"""
+    # 사용자 IP와 User-Agent 정보 저장
+    user_ip_id = func.get_user_ip(request_obj, db)
+    user_agent_id = func.get_user_agent(request_obj, db)
+    
+    kakao_manager = KaKaoManager()
+    
+    # 1. 토큰 교환
+    token_data = kakao_manager.exchange_code_for_token(code)
+    access_token = token_data.get('access_token')
+    
+    # 2. 카카오 사용자 정보 조회
+    kakao_user_info = kakao_manager.get_user_info(access_token)
+    kakao_account = kakao_user_info.get('kakao_account', {})
+    
+    if not kakao_account.get('email'):
+        raise ValueError("카카오 계정에서 이메일 정보를 가져올 수 없습니다.")
+    
+    # 3. 사용자 생성 또는 업데이트
+    user, is_need_info = handle_database_operation(
+        create_or_update_user_kakao, kakao_account, user_ip_id, user_agent_id
+    )
+    
+    # 4. 로그인 로그 기록
+    handle_database_operation(
+        create_user_login_log, user.id, user_ip_id, user_agent_id
+    )
+    
+    # 5. 커밋
+    db.session.commit()
+    
+    # 6. JWT 토큰 생성
+    user_token = create_user_token(user)
+    
+    return {
+        'user': user,
+        'tokens': user_token,
+        'is_need_info': is_need_info,
+        'kakao_info': {
+            'email': kakao_account['email'],
+            'nickname': kakao_account.get('profile', {}).get('nickname', '')
+        }
+    }
 
 @kakao_ns.route('/login')
 class KakaoLogin(Resource):
@@ -38,121 +180,45 @@ class KakaoLogin(Resource):
     def post(self):
         """카카오 로그인 처리"""
         try:
-            if not request.json:
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다.",
-                    "error": "Request data is missing"
-                }, 400
+            # 요청 데이터 검증
+            is_valid, error_response = validate_request_json()
+            if not is_valid:
+                return error_response
             
             code = request.json.get('code')
-            if not code:
-                return {
-                    "status": "error",
-                    "message": "인증 코드가 필요합니다.",
-                    "error": "Authorization code is required"
-                }, 400
             
-            # 사용자 IP와 User-Agent 정보 저장
-            user_ip_id = func.get_user_ip(request, db)
-            user_agent_id = func.get_user_agent(request, db)
-
-            kakao_manager = KaKaoManager()
+            # 필수 필드 검증
+            is_valid, error_response = validate_required_fields(
+                request.json, ['code']
+            )
+            if not is_valid:
+                return error_response
             
-            # 1. 토큰 교환
-            token_data = kakao_manager.exchange_code_for_token(code)
-            access_token = token_data.get('access_token')
+            # 카카오 로그인 처리
+            result = process_kakao_login(code, request)
             
-            # 2. 카카오 사용자 정보 조회
-            kakao_user_info = kakao_manager.get_user_info(access_token)
-            kakao_account = kakao_user_info.get('kakao_account', {})
-            
-            # 카카오 이메일이 없는 경우 처리
-            if not kakao_account.get('email'):
-                return {
-                    "status": "error",
-                    "message": "카카오 계정에서 이메일 정보를 가져올 수 없습니다.",
-                    "error": "Email not available from Kakao"
-                }, 400
-            
-            email = kakao_account['email']
-            nickname = kakao_account.get('profile', {}).get('nickname', '')
-            
-            # 3. 기존 사용자 확인 또는 새 사용자 생성
-            user = User.query.filter_by(email=email.lower()).first()
-            
-            if not user:
-                # 새 사용자 생성 (카카오 로그인 사용자)
-                user = User(
-                    name=nickname or email.split('@')[0],
-                    email=email.lower(),
-                    nickname=nickname or email.split('@')[0],
-                    gender='',
-                    bio='',
-                    login_type='kakao',
-                    user_ip_id=user_ip_id,
-                    user_agent_id=user_agent_id
-                )
-                db.session.add(user)
-                db.session.flush()
-            else:
-                # 기존 사용자 정보 업데이트
-                user.user_ip_id = user_ip_id
-                user.user_agent_id = user_agent_id
-                user.login_type = 'kakao'
-                if nickname and not user.nickname:
-                    user.nickname = nickname
-
-            # 4. 로그인 로그 기록
-            existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
-            
-            if existing_log:
-                existing_log.event_at = datetime.now()
-                existing_log.event_at_unix = int(time.time())
-                existing_log.ip_id = user_ip_id
-                existing_log.user_agent_id = user_agent_id
-            else:
-                user_login_log = UserLoginLog(
-                    user_id=user.id,
-                    ip_id=user_ip_id,
-                    user_agent_id=user_agent_id
-                )
-                db.session.add(user_login_log)
-            
-            db.session.commit()
-            
-            # 5. JWT 토큰 생성
-            user_token = create_user_token(user)
-            
-            app_logger.info(f"카카오 로그인 성공: {email}")
+            app_logger.info(f"카카오 로그인 성공: {result['kakao_info']['email']}")
             return {
                 "status": "success",
                 "message": "카카오 로그인이 완료되었습니다.",
                 "data": {
-                    "access_token": user_token['access_token'],
-                    "refresh_token": user_token['refresh_token'],
+                    "access_token": result['tokens']['access_token'],
+                    "refresh_token": result['tokens']['refresh_token'],
                     "token_type": "Bearer",
-                    "kakao_info": {
-                        "email": email,
-                        "nickname": nickname
-                    }
+                    "kakao_info": result['kakao_info']
                 }
             }, 200
             
         except ValueError as e:
             app_logger.error(f"카카오 로그인 실패: {str(e)}")
-            return {
-                "status": "error",
-                "message": str(e),
-                "error": "Kakao login failed"
-            }, 401
+            return create_error_response(str(e), "KAKAO_LOGIN_FAILED", 401)
         except Exception as e:
             app_logger.error(f"카카오 로그인 중 오류: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"카카오 로그인 중 오류가 발생했습니다: {str(e)}",
-                "error": str(e)
-            }, 500
+            return create_error_response(
+                f"카카오 로그인 중 오류가 발생했습니다: {str(e)}", 
+                "INTERNAL_SERVER_ERROR", 
+                500
+            )
 
 @kakao_ns.route('/auth')
 class KakaoAuth(Resource):
@@ -163,15 +229,12 @@ class KakaoAuth(Resource):
     def post(self):
         """카카오 인증 URL 생성"""
         try:
-            if not request.json:
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다.",
-                    "error": "Request data is missing"
-                }, 400
+            is_valid, error_response = validate_request_json()
+            if not is_valid:
+                return error_response
             
-            scope = request.json.get('scope', 'friends,talk_message')
-            prompt = request.json.get('prompt', 'consent,login')
+            scope = request.json.get('scope', 'profile_nickname,profile_image,account_email')
+            prompt = request.json.get('prompt', 'login')
             
             kakao_manager = KaKaoManager()
             auth_url = kakao_manager.get_auth_url(scope=scope, prompt=prompt)
@@ -188,14 +251,58 @@ class KakaoAuth(Resource):
             
         except Exception as e:
             app_logger.error(f"카카오 인증 URL 생성 중 오류: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"카카오 인증 URL 생성 중 오류가 발생했습니다: {str(e)}",
-                "error": str(e)
-            }, 500
+            return create_error_response(
+                f"카카오 인증 URL 생성 중 오류가 발생했습니다: {str(e)}",
+                "INTERNAL_SERVER_ERROR",
+                500
+            )
 
 @kakao_ns.route('/callback')
 class KakaoCallback(Resource):
+    @kakao_ns.response(200, 'Success')
+    @kakao_ns.response(400, 'Bad Request')
+    @kakao_ns.response(500, 'Internal Server Error')
+    def get(self):
+        """카카오 인증 코드를 GET 방식으로 받아서 직접 토큰 처리"""
+        try:
+            code = request.args.get('code')
+            
+            if not code:
+                return redirect(f"{settings.KAKAO_FRONTEND_CALLBACK_URL}?error=authorization_code_required")
+            
+            # 카카오 로그인 처리
+            result = process_kakao_login(code, request)
+            
+            # 토큰을 쿠키에 설정하고 프론트엔드로 리디렉트
+            response = make_response(redirect(settings.KAKAO_FRONTEND_CALLBACK_URL))
+            
+            # 토큰을 쿠키에 설정 (보안 강화)
+            response.set_cookie(
+                'access_token', 
+                result['tokens']['access_token'], 
+                max_age=30*60, 
+                httponly=True, 
+                secure=True, 
+                samesite='Strict',
+                path='/'
+            )
+            response.set_cookie(
+                'refresh_token', 
+                result['tokens']['refresh_token'], 
+                max_age=24*60*60, 
+                httponly=True, 
+                secure=True, 
+                samesite='Strict',
+                path='/'
+            )
+            
+            return response
+            
+        except Exception as e:
+            app_logger.error(f"카카오 GET 콜백 처리 중 오류: {str(e)}")
+            error_url = f"{settings.KAKAO_FRONTEND_CALLBACK_URL}?error=kakao_callback_error&message={str(e)}"
+            return redirect(error_url)
+
     @kakao_ns.expect(kakao_callback_model)
     @kakao_ns.response(200, 'Success', kakao_callback_success_model)
     @kakao_ns.response(400, 'Bad Request')
@@ -204,127 +311,46 @@ class KakaoCallback(Resource):
     def post(self):
         """카카오 인증 코드를 토큰으로 교환"""
         try:
-            if not request.json:
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다.",
-                    "error": "Request data is missing"
-                }, 400
+            is_valid, error_response = validate_request_json()
+            if not is_valid:
+                return error_response
             
             code = request.json.get('code')
-            if not code:
-                return {
-                    "status": "error",
-                    "message": "인증 코드가 필요합니다.",
-                    "error": "Authorization code is required"
-                }, 400
             
-            # 사용자 IP와 User-Agent 정보 저장
-            user_ip_id = func.get_user_ip(request, db)
-            user_agent_id = func.get_user_agent(request, db)
+            is_valid, error_response = validate_required_fields(
+                request.json, ['code']
+            )
+            if not is_valid:
+                return error_response
             
-            # 1. 토큰 교환
-            kakao_manager = KaKaoManager()
-            token_data = kakao_manager.exchange_code_for_token(code)
-            
-            access_token = token_data.get('access_token')
-            
-            # 2. 카카오 사용자 정보 조회
-            kakao_user_info = kakao_manager.get_user_info(access_token)
-            
-            kakao_account = kakao_user_info.get('kakao_account', {})
-            email = kakao_account.get('email')
-            name = kakao_account.get('profile', {}).get('nickname', '')
-            
-            if not email:
-                return {
-                    "status": "error",
-                    "message": "카카오 계정에서 이메일 정보를 가져올 수 없습니다.",
-                    "error": "Email not available from Kakao"
-                }, 400
-            
-            # 3. 기존 사용자 확인
-            user = User.query.filter_by(email=email.lower()).first()
-            
-            is_need_info = False
-            
-            if not user:
-                # 새 사용자 생성 (카카오 로그인 사용자)
-                is_need_info = True
-                
-                new_user_setting = UserSetting(
-                    dark_mode='N',
-                    editor_mode='light',
-                    lang_cd='ko'
-                )
-                
-                db.session.add(new_user_setting)
-                db.session.flush()
-                
-                user = User(
-                    name=name or email.split('@')[0],
-                    email=email.lower(),
-                    nickname='',
-                    gender='',
-                    bio='',
-                    login_type='kakao',
-                    user_ip_id=user_ip_id,
-                    user_agent_id=user_agent_id,
-                    user_setting_id=new_user_setting.id
-                )
-                db.session.add(user)
-                db.session.flush()
-            
-            # 4. 로그인 로그 기록
-            existing_log = UserLoginLog.query.filter_by(user_id=user.id).first()
-            
-            if existing_log:
-                existing_log.event_at = datetime.now()
-                existing_log.event_at_unix = int(time.time())
-                existing_log.ip_id = user_ip_id
-                existing_log.user_agent_id = user_agent_id
-            else:
-                user_login_log = UserLoginLog(
-                    user_id=user.id,
-                    ip_id=user_ip_id,
-                    user_agent_id=user_agent_id
-                )
-                db.session.add(user_login_log)
-            
-            db.session.commit()
-            
-            # 5. JWT 토큰 생성
-            user_token = create_user_token(user)
+            # 카카오 로그인 처리
+            result = process_kakao_login(code, request)
             
             # 토큰을 헤더로 설정
             response = make_response({
                 "status": "success",
                 "message": "토큰 교환이 완료되었습니다.",
                 "data": {
-                    "is_need_info": is_need_info
+                    "is_need_info": result['is_need_info']
                 }
             }, 200)
             
             # 토큰을 헤더에 추가
-            response.headers['X-Access-Token'] = user_token['access_token']
-            response.headers['X-Refresh-Token'] = user_token['refresh_token']
+            response.headers['X-Access-Token'] = result['tokens']['access_token']
+            response.headers['X-Refresh-Token'] = result['tokens']['refresh_token']
             
             return response
             
         except ValueError as e:
-            app_logger.error(f"토큰 교환 실패: {str(e)}")
-            return {
-                "status": "error",
-                "message": str(e),
-                "error": "Token exchange failed"
-            }, 401
+            app_logger.error(f"카카오 토큰 교환 실패: {str(e)}")
+            return create_error_response(str(e), "TOKEN_EXCHANGE_FAILED", 401)
         except Exception as e:
-            app_logger.error(f"카카오 콜백 처리 중 오류: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"카카오 콜백 처리 중 오류가 발생했습니다: {str(e)}",
-                "error": str(e)
-            }, 500
+            app_logger.error(f"카카오 토큰 교환 중 오류: {str(e)}")
+            return create_error_response(
+                f"카카오 토큰 교환 중 오류가 발생했습니다: {str(e)}",
+                "INTERNAL_SERVER_ERROR",
+                500
+            )
 
 @kakao_ns.route('/token/refresh')
 class KakaoTokenRefresh(Resource):
@@ -336,20 +362,17 @@ class KakaoTokenRefresh(Resource):
     def post(self):
         """카카오 토큰 갱신"""
         try:
-            if not request.json:
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다.",
-                    "error": "Request data is missing"
-                }, 400
+            is_valid, error_response = validate_request_json()
+            if not is_valid:
+                return error_response
             
             refresh_token = request.json.get('refresh_token')
-            if not refresh_token:
-                return {
-                    "status": "error",
-                    "message": "리프레시 토큰이 필요합니다.",
-                    "error": "Refresh token is required"
-                }, 400
+            
+            is_valid, error_response = validate_required_fields(
+                request.json, ['refresh_token']
+            )
+            if not is_valid:
+                return error_response
             
             kakao_manager = KaKaoManager()
             token_data = kakao_manager.refresh_token(refresh_token)
@@ -367,19 +390,15 @@ class KakaoTokenRefresh(Resource):
             }, 200
             
         except ValueError as e:
-            app_logger.error(f"토큰 갱신 실패: {str(e)}")
-            return {
-                "status": "error",
-                "message": str(e),
-                "error": "Token refresh failed"
-            }, 401
+            app_logger.error(f"카카오 토큰 갱신 실패: {str(e)}")
+            return create_error_response(str(e), "TOKEN_REFRESH_FAILED", 401)
         except Exception as e:
-            app_logger.error(f"토큰 갱신 중 오류: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"토큰 갱신 중 오류가 발생했습니다: {str(e)}",
-                "error": str(e)
-            }, 500
+            app_logger.error(f"카카오 토큰 갱신 중 오류: {str(e)}")
+            return create_error_response(
+                f"카카오 토큰 갱신 중 오류가 발생했습니다: {str(e)}",
+                "INTERNAL_SERVER_ERROR",
+                500
+            )
 
 @kakao_ns.route('/user/info')
 class KakaoUserInfo(Resource):
@@ -391,30 +410,23 @@ class KakaoUserInfo(Resource):
     def post(self):
         """카카오 사용자 정보 조회"""
         try:
-            if not request.json:
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다.",
-                    "error": "Request data is missing"
-                }, 400
+            is_valid, error_response = validate_request_json()
+            if not is_valid:
+                return error_response
             
             access_token = request.json.get('access_token')
-            if not access_token:
-                return {
-                    "status": "error",
-                    "message": "액세스 토큰이 필요합니다.",
-                    "error": "Access token is required"
-                }, 400
+            
+            is_valid, error_response = validate_required_fields(
+                request.json, ['access_token']
+            )
+            if not is_valid:
+                return error_response
             
             kakao_manager = KaKaoManager()
             
             # 토큰 유효성 검사
             if not kakao_manager.validate_token(access_token):
-                return {
-                    "status": "error",
-                    "message": "유효하지 않은 토큰입니다.",
-                    "error": "Invalid token"
-                }, 401
+                return create_error_response("유효하지 않은 토큰입니다.", "INVALID_TOKEN", 401)
             
             # 사용자 정보 조회
             user_info = kakao_manager.get_user_info(access_token)
@@ -432,12 +444,12 @@ class KakaoUserInfo(Resource):
             }, 200
             
         except Exception as e:
-            app_logger.error(f"사용자 정보 조회 중 오류: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"사용자 정보 조회 중 오류가 발생했습니다: {str(e)}",
-                "error": str(e)
-            }, 500
+            app_logger.error(f"카카오 사용자 정보 조회 중 오류: {str(e)}")
+            return create_error_response(
+                f"카카오 사용자 정보 조회 중 오류가 발생했습니다: {str(e)}",
+                "INTERNAL_SERVER_ERROR",
+                500
+            )
 
 @kakao_ns.route('/message/send')
 class KakaoSendMessage(Resource):
@@ -449,34 +461,26 @@ class KakaoSendMessage(Resource):
     def post(self):
         """카카오 메시지 전송"""
         try:
-            if not request.json:
-                return {
-                    "status": "error",
-                    "message": "요청 데이터가 없습니다.",
-                    "error": "Request data is missing"
-                }, 400
+            is_valid, error_response = validate_request_json()
+            if not is_valid:
+                return error_response
             
             access_token = request.json.get('access_token')
             message = request.json.get('message')
             link_url = request.json.get('link_url')
             friend_uuid = request.json.get('friend_uuid')
             
-            if not access_token or not message:
-                return {
-                    "status": "error",
-                    "message": "액세스 토큰과 메시지가 필요합니다.",
-                    "error": "Access token and message are required"
-                }, 400
+            is_valid, error_response = validate_required_fields(
+                request.json, ['access_token', 'message']
+            )
+            if not is_valid:
+                return error_response
             
             kakao_manager = KaKaoManager()
             
             # 토큰 유효성 검사
             if not kakao_manager.validate_token(access_token):
-                return {
-                    "status": "error",
-                    "message": "유효하지 않은 토큰입니다.",
-                    "error": "Invalid token"
-                }, 401
+                return create_error_response("유효하지 않은 토큰입니다.", "INVALID_TOKEN", 401)
             
             success = False
             result_message = ""
@@ -506,12 +510,12 @@ class KakaoSendMessage(Resource):
             }, 200 if success else 500
             
         except Exception as e:
-            app_logger.error(f"메시지 전송 중 오류: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"메시지 전송 중 오류가 발생했습니다: {str(e)}",
-                "error": str(e)
-            }, 500
+            app_logger.error(f"카카오 메시지 전송 중 오류: {str(e)}")
+            return create_error_response(
+                f"카카오 메시지 전송 중 오류가 발생했습니다: {str(e)}",
+                "INTERNAL_SERVER_ERROR",
+                500
+            )
 
 @kakao_ns.route('/debug')
 class KakaoDebug(Resource):
@@ -522,7 +526,9 @@ class KakaoDebug(Resource):
     def post(self):
         """카카오 디버그 정보 조회"""
         try:
-            access_token = request.json.get('access_token') if request.json else None
+            access_token = None
+            if request.json:
+                access_token = request.json.get('access_token')
             
             kakao_manager = KaKaoManager()
             debug_info = kakao_manager.get_debug_info(access_token)
@@ -534,9 +540,9 @@ class KakaoDebug(Resource):
             }, 200
             
         except Exception as e:
-            app_logger.error(f"디버그 정보 조회 중 오류: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"디버그 정보 조회 중 오류가 발생했습니다: {str(e)}",
-                "error": str(e)
-            }, 500
+            app_logger.error(f"카카오 디버그 정보 조회 중 오류: {str(e)}")
+            return create_error_response(
+                f"카카오 디버그 정보 조회 중 오류가 발생했습니다: {str(e)}",
+                "INTERNAL_SERVER_ERROR",
+                500
+            )
