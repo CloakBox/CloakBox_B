@@ -2,10 +2,8 @@ from flask import Blueprint, request, make_response
 from flask_restx import Resource
 from extensions import db, app_logger
 from models.user_model.user import User
-from models.user_model.user_ip import UserIp
-from models.user_model.user_agent import UserAgent
 from models.user_model.user_login_log import UserLoginLog
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 import settings
 from swagger_config import certification_ns
 from pydantic import ValidationError
@@ -26,44 +24,8 @@ from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
 from utils import func
-from sqlalchemy.exc import SQLAlchemyError
 
 certification_bp = Blueprint("certification", __name__, url_prefix=f'/{settings.API_PREFIX}')
-
-# 공통 유틸리티 함수
-def create_error_response(message: str, error_code: str, status_code: int) -> Tuple[Dict[str, Any], int]:
-    """에러 응답 생성"""
-    return {
-        "status": "error",
-        "message": message,
-        "error": error_code
-    }, status_code
-
-def validate_request_json() -> Tuple[bool, Tuple[Dict[str, Any], int]]:
-    """요청 JSON 데이터 검증"""
-    if not request.json:
-        return False, create_error_response("요청 데이터가 없습니다.", "REQUEST_DATA_MISSING", 400)
-    return True, None
-
-def validate_required_fields(data: Dict[str, Any], required_fields: list) -> Tuple[bool, Tuple[Dict[str, Any], int]]:
-    """필수 필드 검증"""
-    missing_fields = [field for field in required_fields if not data.get(field)]
-    if missing_fields:
-        return False, create_error_response(
-            f"필수 필드가 없습니다: {', '.join(missing_fields)}",
-            "REQUIRED_FIELDS_MISSING",
-            400
-        )
-    return True, None
-
-def handle_database_operation(func, *args, **kwargs):
-    """DB 작업 예외 처리"""
-    try:
-        return func(*args, **kwargs)
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        app_logger.error(f"데이터베이스 오류: {str(e)}")
-        raise e
 
 def create_user_login_log(user_id: int, user_ip_id: int, user_agent_id: int) -> None:
     """사용자 로그인 로그 생성 또는 업데이트"""
@@ -93,7 +55,7 @@ class SendCertificationCode(Resource):
         """인증번호 전송"""
         try:
             # 요청 데이터 검증
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.func.validate_request_json()
             if not is_valid:
                 return error_response
             
@@ -101,7 +63,7 @@ class SendCertificationCode(Resource):
             try:
                 certification_data = SendCertificationCodeDTO(**request.json)
             except ValidationError as e:
-                return create_error_response(
+                return func.create_error_response(
                     "입력 데이터 검증 실패",
                     "VALIDATION_ERROR",
                     400
@@ -120,13 +82,13 @@ class SendCertificationCode(Resource):
                 app_logger.error(f"인증번호 생성 중 오류: {str(e)}")
                 error_message = str(e)
                 if "1분 이내에 재생성할 수 없습니다" in error_message:
-                    return create_error_response(
+                    return func.create_error_response(
                         "1분 이내에 재생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
                         "TOO_FREQUENT_REQUESTS",
                         429
                     )
                 else:
-                    return create_error_response(
+                    return func.create_error_response(
                         "인증번호 생성에 실패했습니다.",
                         "CERTIFICATION_CODE_CREATION_FAILED",
                         500
@@ -138,7 +100,7 @@ class SendCertificationCode(Resource):
                     db.session.delete(certification_code)
                     db.session.commit()
                     
-                    return create_error_response(
+                    return func.create_error_response(
                         "이메일 전송에 실패했습니다.",
                         "EMAIL_SEND_FAILED",
                         500
@@ -151,7 +113,7 @@ class SendCertificationCode(Resource):
                 except:
                     pass
                 
-                return create_error_response(
+                return func.create_error_response(
                     "이메일 전송 중 오류가 발생했습니다.",
                     "EMAIL_SEND_ERROR",
                     500
@@ -167,7 +129,7 @@ class SendCertificationCode(Resource):
 
         except Exception as e:
             app_logger.error(f"인증번호 전송 중 예상치 못한 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"인증번호 전송 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -188,7 +150,7 @@ class VerifyCertificationCode(Resource):
             user_agent_id = func.get_user_agent(request, db)
             
             # 요청 데이터 검증
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
@@ -196,7 +158,7 @@ class VerifyCertificationCode(Resource):
             try:
                 verification_data = VerifyCertificationCodeDTO(**request.json)
             except ValidationError as e:
-                return create_error_response(
+                return func.create_error_response(
                     "입력 데이터 검증 실패",
                     "VALIDATION_ERROR",
                     400
@@ -212,7 +174,7 @@ class VerifyCertificationCode(Resource):
             )
             
             if not certification_code:
-                return create_error_response(
+                return func.create_error_response(
                     "유효하지 않거나 만료된 인증번호입니다.",
                     "INVALID_OR_EXPIRED_CODE",
                     409
@@ -230,7 +192,7 @@ class VerifyCertificationCode(Resource):
             # 사용자가 존재하면 토큰 생성
             if user is not None:
                 # 로그인 로그 생성 또는 업데이트
-                handle_database_operation(
+                func.handle_database_operation(
                     create_user_login_log, user.id, user_ip_id, user_agent_id
                 )
                 
@@ -266,7 +228,7 @@ class VerifyCertificationCode(Resource):
                 
         except Exception as e:
             app_logger.error(f"인증번호 확인 중 오류가 발생했습니다: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"인증번호 확인 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500

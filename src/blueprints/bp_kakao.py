@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify, make_response, redirect
 from flask_restx import Resource
 from extensions import db, app_logger
 from models.user_model.user import User
-from models.user_model.user_login_log import UserLoginLog
 from models.user_model.user_setting import UserSetting
 import settings
 from swagger_config import kakao_ns
@@ -25,61 +24,8 @@ from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
 from utils import func
-from sqlalchemy.exc import SQLAlchemyError
 
 kakao_bp = Blueprint("kakao", __name__, url_prefix=f'/{settings.API_PREFIX}')
-
-# 공통 유틸리티 함수
-def create_error_response(message, error_code, status_code):
-    """에러 응답 생성"""
-    return {
-        "status": "error",
-        "message": message,
-        "error": error_code
-    }, status_code
-
-def validate_request_json():
-    """요청 JSON 데이터 검증"""
-    if not request.json:
-        return False, create_error_response("요청 데이터가 없습니다.", "REQUEST_DATA_MISSING", 400)
-    return True, None
-
-def validate_required_fields(data, required_fields):
-    """필수 필드 검증"""
-    missing_fields = [field for field in required_fields if not data.get(field)]
-    if missing_fields:
-        return False, create_error_response(
-            f"필수 필드가 없습니다: {', '.join(missing_fields)}",
-            "REQUIRED_FIELDS_MISSING",
-            400
-        )
-    return True, None
-
-def handle_database_operation(func, *args, **kwargs):
-    """DB 작업 예외 처리"""
-    try:
-        return func(*args, **kwargs)
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        app_logger.error(f"데이터베이스 오류: {str(e)}")
-        raise e
-
-def create_user_login_log(user_id, user_ip_id, user_agent_id):
-    """사용자 로그인 로그 생성 또는 업데이트"""
-    existing_log = UserLoginLog.query.filter_by(user_id=user_id).first()
-    
-    if existing_log:
-        existing_log.event_at = datetime.now()
-        existing_log.event_at_unix = int(time.time())
-        existing_log.ip_id = user_ip_id
-        existing_log.user_agent_id = user_agent_id
-    else:
-        user_login_log = UserLoginLog(
-            user_id=user_id,
-            ip_id=user_ip_id,
-            user_agent_id=user_agent_id
-        )
-        db.session.add(user_login_log)
 
 def create_or_update_user_kakao(kakao_account, user_ip_id, user_agent_id):
     """카카오 사용자 생성 또는 업데이트"""
@@ -145,13 +91,13 @@ def process_kakao_login(code, request_obj):
         raise ValueError("카카오 계정에서 이메일 정보를 가져올 수 없습니다.")
     
     # 3. 사용자 생성 또는 업데이트
-    user, is_need_info = handle_database_operation(
+    user, is_need_info = func.handle_database_operation(
         create_or_update_user_kakao, kakao_account, user_ip_id, user_agent_id
     )
     
     # 4. 로그인 로그 기록
-    handle_database_operation(
-        create_user_login_log, user.id, user_ip_id, user_agent_id
+    func.handle_database_operation(
+        func.create_user_login_log, user.id, user_ip_id, user_agent_id
     )
     
     # 5. 커밋
@@ -181,14 +127,14 @@ class KakaoLogin(Resource):
         """카카오 로그인 처리"""
         try:
             # 요청 데이터 검증
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
             code = request.json.get('code')
             
             # 필수 필드 검증
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['code']
             )
             if not is_valid:
@@ -211,10 +157,10 @@ class KakaoLogin(Resource):
             
         except ValueError as e:
             app_logger.error(f"카카오 로그인 실패: {str(e)}")
-            return create_error_response(str(e), "KAKAO_LOGIN_FAILED", 401)
+            return func.create_error_response(str(e), "KAKAO_LOGIN_FAILED", 401)
         except Exception as e:
             app_logger.error(f"카카오 로그인 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"카카오 로그인 중 오류가 발생했습니다: {str(e)}", 
                 "INTERNAL_SERVER_ERROR", 
                 500
@@ -229,7 +175,7 @@ class KakaoAuth(Resource):
     def post(self):
         """카카오 인증 URL 생성"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
@@ -251,7 +197,7 @@ class KakaoAuth(Resource):
             
         except Exception as e:
             app_logger.error(f"카카오 인증 URL 생성 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"카카오 인증 URL 생성 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -311,13 +257,13 @@ class KakaoCallback(Resource):
     def post(self):
         """카카오 인증 코드를 토큰으로 교환"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
             code = request.json.get('code')
             
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['code']
             )
             if not is_valid:
@@ -343,10 +289,10 @@ class KakaoCallback(Resource):
             
         except ValueError as e:
             app_logger.error(f"카카오 토큰 교환 실패: {str(e)}")
-            return create_error_response(str(e), "TOKEN_EXCHANGE_FAILED", 401)
+            return func.create_error_response(str(e), "TOKEN_EXCHANGE_FAILED", 401)
         except Exception as e:
             app_logger.error(f"카카오 토큰 교환 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"카카오 토큰 교환 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -362,13 +308,13 @@ class KakaoTokenRefresh(Resource):
     def post(self):
         """카카오 토큰 갱신"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
             refresh_token = request.json.get('refresh_token')
             
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['refresh_token']
             )
             if not is_valid:
@@ -391,10 +337,10 @@ class KakaoTokenRefresh(Resource):
             
         except ValueError as e:
             app_logger.error(f"카카오 토큰 갱신 실패: {str(e)}")
-            return create_error_response(str(e), "TOKEN_REFRESH_FAILED", 401)
+            return func.create_error_response(str(e), "TOKEN_REFRESH_FAILED", 401)
         except Exception as e:
             app_logger.error(f"카카오 토큰 갱신 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"카카오 토큰 갱신 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -410,13 +356,13 @@ class KakaoUserInfo(Resource):
     def post(self):
         """카카오 사용자 정보 조회"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
             access_token = request.json.get('access_token')
             
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['access_token']
             )
             if not is_valid:
@@ -426,7 +372,7 @@ class KakaoUserInfo(Resource):
             
             # 토큰 유효성 검사
             if not kakao_manager.validate_token(access_token):
-                return create_error_response("유효하지 않은 토큰입니다.", "INVALID_TOKEN", 401)
+                return func.create_error_response("유효하지 않은 토큰입니다.", "INVALID_TOKEN", 401)
             
             # 사용자 정보 조회
             user_info = kakao_manager.get_user_info(access_token)
@@ -445,7 +391,7 @@ class KakaoUserInfo(Resource):
             
         except Exception as e:
             app_logger.error(f"카카오 사용자 정보 조회 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"카카오 사용자 정보 조회 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -461,7 +407,7 @@ class KakaoSendMessage(Resource):
     def post(self):
         """카카오 메시지 전송"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
@@ -470,7 +416,7 @@ class KakaoSendMessage(Resource):
             link_url = request.json.get('link_url')
             friend_uuid = request.json.get('friend_uuid')
             
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['access_token', 'message']
             )
             if not is_valid:
@@ -480,7 +426,7 @@ class KakaoSendMessage(Resource):
             
             # 토큰 유효성 검사
             if not kakao_manager.validate_token(access_token):
-                return create_error_response("유효하지 않은 토큰입니다.", "INVALID_TOKEN", 401)
+                return func.create_error_response("유효하지 않은 토큰입니다.", "INVALID_TOKEN", 401)
             
             success = False
             result_message = ""
@@ -511,7 +457,7 @@ class KakaoSendMessage(Resource):
             
         except Exception as e:
             app_logger.error(f"카카오 메시지 전송 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"카카오 메시지 전송 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -541,7 +487,7 @@ class KakaoDebug(Resource):
             
         except Exception as e:
             app_logger.error(f"카카오 디버그 정보 조회 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"카카오 디버그 정보 조회 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500

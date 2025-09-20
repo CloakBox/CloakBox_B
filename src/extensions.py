@@ -8,8 +8,6 @@ from utils.tunnel_manager import tunnel_manager
 from utils.loging_manager import *
 from utils.transacation_manager import TransactionManager
 from utils.email_manager import EmailManager
-from utils.jwt_manager import jwt_manager
-from utils.auth_decorator import require_auth, require_permission, require_admin
 
 # Flask 확장들
 db = SQLAlchemy()

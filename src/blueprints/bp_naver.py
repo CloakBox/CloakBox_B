@@ -23,44 +23,8 @@ from service.user_logic.user_service import create_user_token
 from datetime import datetime
 import time
 from utils import func
-from sqlalchemy.exc import SQLAlchemyError
 
 naver_bp = Blueprint("naver", __name__, url_prefix=f'/{settings.API_PREFIX}')
-
-# 공통 유틸리티 함수
-def create_error_response(message, error_code, status_code):
-    """에러 응답 생성"""
-    return {
-        "status": "error",
-        "message": message,
-        "error": error_code
-    }, status_code
-
-def validate_request_json():
-    """요청 JSON 데이터 검증"""
-    if not request.json:
-        return False, create_error_response("요청 데이터가 없습니다.", "REQUEST_DATA_MISSING", 400)
-    return True, None
-
-def validate_required_fields(data, required_fields):
-    """필수 필드 검증"""
-    missing_fields = [field for field in required_fields if not data.get(field)]
-    if missing_fields:
-        return False, create_error_response(
-            f"필수 필드가 없습니다: {', '.join(missing_fields)}",
-            "REQUIRED_FIELDS_MISSING",
-            400
-        )
-    return True, None
-
-def handle_database_operation(func, *args, **kwargs):
-    """데베 작업 예외 처리"""
-    try:
-        return func(*args, **kwargs)
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        app_logger.error(f"데이터베이스 오류: {str(e)}")
-        raise e
 
 def create_user_login_log(user_id, user_ip_id, user_agent_id):
     """사용자 로그인 로그 생성 또는 업데이트"""
@@ -146,12 +110,12 @@ def process_naver_login(code, state, request_obj):
         raise ValueError("네이버 계정에서 이메일 정보를 가져올 수 없습니다.")
     
     # 3. 사용자 생성 또는 업데이트
-    user, is_need_info = handle_database_operation(
+    user, is_need_info = func.handle_database_operation(
         create_or_update_user, response, user_ip_id, user_agent_id
     )
     
     # 4. 로그인 로그 기록
-    handle_database_operation(
+    func.handle_database_operation(
         create_user_login_log, user.id, user_ip_id, user_agent_id
     )
     
@@ -183,7 +147,7 @@ class NaverLogin(Resource):
         """네이버 로그인 처리"""
         try:
             # 요청 데이터 검증
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
@@ -191,7 +155,7 @@ class NaverLogin(Resource):
             state = request.json.get('state')
             
             # 필수 필드 검증
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['code', 'state']
             )
             if not is_valid:
@@ -214,10 +178,10 @@ class NaverLogin(Resource):
             
         except ValueError as e:
             app_logger.error(f"네이버 로그인 실패: {str(e)}")
-            return create_error_response(str(e), "NAVER_LOGIN_FAILED", 401)
+            return func.create_error_response(str(e), "NAVER_LOGIN_FAILED", 401)
         except Exception as e:
             app_logger.error(f"네이버 로그인 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"네이버 로그인 중 오류가 발생했습니다: {str(e)}", 
                 "INTERNAL_SERVER_ERROR", 
                 500
@@ -232,7 +196,7 @@ class NaverAuth(Resource):
     def post(self):
         """네이버 인증 URL 생성"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
@@ -254,7 +218,7 @@ class NaverAuth(Resource):
             
         except Exception as e:
             app_logger.error(f"네이버 인증 URL 생성 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"네이버 인증 URL 생성 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -318,14 +282,14 @@ class NaverCallback(Resource):
     def post(self):
         """네이버 인증 코드를 토큰으로 교환"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
             code = request.json.get('code')
             state = request.json.get('state')
             
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['code', 'state']
             )
             if not is_valid:
@@ -351,10 +315,10 @@ class NaverCallback(Resource):
             
         except ValueError as e:
             app_logger.error(f"네이버 토큰 교환 실패: {str(e)}")
-            return create_error_response(str(e), "TOKEN_EXCHANGE_FAILED", 401)
+            return func.create_error_response(str(e), "TOKEN_EXCHANGE_FAILED", 401)
         except Exception as e:
             app_logger.error(f"네이버 토큰 교환 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"네이버 토큰 교환 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -370,13 +334,13 @@ class NaverTokenRefresh(Resource):
     def post(self):
         """네이버 리프레시 토큰으로 액세스 토큰 갱신"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
             refresh_token = request.json.get('refresh_token')
             
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['refresh_token']
             )
             if not is_valid:
@@ -398,10 +362,10 @@ class NaverTokenRefresh(Resource):
             
         except ValueError as e:
             app_logger.error(f"네이버 토큰 갱신 실패: {str(e)}")
-            return create_error_response(str(e), "TOKEN_REFRESH_FAILED", 401)
+            return func.create_error_response(str(e), "TOKEN_REFRESH_FAILED", 401)
         except Exception as e:
             app_logger.error(f"네이버 토큰 갱신 중 오류: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"네이버 토큰 갱신 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -417,13 +381,13 @@ class NaverUserInfo(Resource):
     def post(self):
         """네이버 사용자 정보 조회"""
         try:
-            is_valid, error_response = validate_request_json()
+            is_valid, error_response = func.validate_request_json()
             if not is_valid:
                 return error_response
             
             access_token = request.json.get('access_token')
             
-            is_valid, error_response = validate_required_fields(
+            is_valid, error_response = func.validate_required_fields(
                 request.json, ['access_token']
             )
             if not is_valid:
@@ -442,7 +406,7 @@ class NaverUserInfo(Resource):
             
         except Exception as e:
             app_logger.error(f"네이버 사용자 정보 조회 실패: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"네이버 사용자 정보 조회 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500
@@ -472,7 +436,7 @@ class NaverDebug(Resource):
             
         except Exception as e:
             app_logger.error(f"네이버 디버그 정보 조회 실패: {str(e)}")
-            return create_error_response(
+            return func.create_error_response(
                 f"네이버 디버그 정보 조회 중 오류가 발생했습니다: {str(e)}",
                 "INTERNAL_SERVER_ERROR",
                 500

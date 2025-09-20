@@ -1,5 +1,4 @@
 from flask import Flask, make_response, request
-from werkzeug.exceptions import NotFound, MethodNotAllowed
 from extensions import init_extensions, tunnel_manager
 import config
 import settings
